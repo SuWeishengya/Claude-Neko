@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Neko — 管理命令
-# 用法: pet [start|stop|enable|disable|status]
+# 用法: neko [start|stop|enable|disable|status]
 
 INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
 STATE_DIR="$HOME/.local/state/claude-desktop-pet"
@@ -188,7 +188,7 @@ case "${1:-help}" in
     *)
         echo "Claude Neko 管理工具"
         echo ""
-        echo "用法: pet <命令>"
+        echo "用法: neko <命令>"
         echo ""
         echo "命令:"
         echo "  start    拉起一只小猫"

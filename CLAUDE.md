@@ -24,11 +24,11 @@ pip install -r requirements.txt
 ./install.sh
 
 # 管理命令
-pet start     # 拉起小猫
-pet stop      # 关闭小猫
-pet enable    # 开启自动启动
-pet disable   # 关闭自动启动
-pet status    # 查看状态
+neko start     # 拉起小猫
+neko stop      # 关闭小猫
+neko enable    # 开启自动启动
+neko disable   # 关闭自动启动
+neko status    # 查看状态
 ```
 
 没有测试套件、lint 工具或构建步骤。代码通过直接运行验证。
@@ -73,7 +73,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 - `config.json` — 显示配置（`show_level`、`show_counts`）
 - `assets/cat/{state}/frame_{N}.png` — 精灵图，状态：sleep/idle/busy/attention/celebrate/heart
-- `pet` — 命令行管理工具
+- `neko` — 命令行管理工具
 - `install.sh` / `uninstall.sh` — 一键安装/卸载
 - `start.sh` / `stop.sh` — 手动模式启动/停止
 - `pids.txt` — 手动模式进程 PID 文件
@@ -84,7 +84,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 ~/.local/share/claude-desktop-pet/   # 代码（只读）
 ~/.local/state/claude-desktop-pet/   # 运行时数据（读写）
   └── sessions/                      # session 注册表
-~/.local/bin/pet                     # 命令行工具
+~/.local/bin/neko                     # 命令行工具
 ~/.claude/settings.json              # hooks 配置（追加，不覆盖）
 ```
 

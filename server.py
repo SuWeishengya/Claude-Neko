@@ -80,13 +80,13 @@ def remove_registration():
 # ─── 心跳超时检查 ─────────────────────────────────────────────
 
 def heartbeat_checker():
-    """后台线程：检查心跳超时，120 秒无事件则自动关闭"""
+    """后台线程：检查心跳超时，无事件则自动关闭"""
     global last_event_time
     while True:
-        time.sleep(30)
+        time.sleep(2)
         if args.session_id and state["shutdown"]:
             break
-        if args.session_id and (time.time() - last_event_time > 120):
+        if args.session_id and (time.time() - last_event_time > 5):
             print("⏰ 心跳超时，自动关闭")
             do_shutdown()
             break

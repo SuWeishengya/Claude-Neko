@@ -51,7 +51,7 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$STATE_DIR/sessions"
 
 # 复制文件
-for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh pet config.json; do
+for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh neko config.json; do
     if [ -f "$SCRIPT_DIR/$f" ]; then
         cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
     fi
@@ -63,11 +63,11 @@ if [ -d "$SCRIPT_DIR/assets" ]; then
 fi
 
 # 设置可执行权限
-chmod +x "$INSTALL_DIR/launch.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/hook_bridge.py" "$INSTALL_DIR/pet"
+chmod +x "$INSTALL_DIR/launch.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/hook_bridge.py" "$INSTALL_DIR/neko"
 
 # 创建全局命令链接
 mkdir -p "$HOME/.local/bin"
-ln -sf "$INSTALL_DIR/pet" "$HOME/.local/bin/pet"
+ln -sf "$INSTALL_DIR/neko" "$HOME/.local/bin/neko"
 
 # ─── 4. 生成全局 hooks 配置 ─────────────────────────────────
 echo ""

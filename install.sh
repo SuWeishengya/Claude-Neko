@@ -50,16 +50,21 @@ echo "📁 安装到 $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$STATE_DIR/sessions"
 
-# 复制文件
-for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh neko config.json; do
-    if [ -f "$SCRIPT_DIR/$f" ]; then
-        cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
-    fi
-done
+# 如果从安装目录调用（如 neko enable），跳过复制
+if [ "$SCRIPT_DIR" = "$INSTALL_DIR" ]; then
+    echo "  已在安装目录，跳过文件复制"
+else
+    # 复制文件
+    for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh neko config.json test_all.sh; do
+        if [ -f "$SCRIPT_DIR/$f" ]; then
+            cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
+        fi
+    done
 
-# 复制 assets
-if [ -d "$SCRIPT_DIR/assets" ]; then
-    cp -r "$SCRIPT_DIR/assets" "$INSTALL_DIR/"
+    # 复制 assets
+    if [ -d "$SCRIPT_DIR/assets" ]; then
+        cp -r "$SCRIPT_DIR/assets" "$INSTALL_DIR/"
+    fi
 fi
 
 # 设置可执行权限

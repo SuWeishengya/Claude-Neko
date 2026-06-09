@@ -1,6 +1,8 @@
 # Claude Neko
 
-一只住在你屏幕上的小橘猫，实时显示 Claude Code 的工作状态。
+> **🐱 专为 Linux 下的 Claude Code CLI 设计的桌面宠物**
+
+一只住在你屏幕上的小橘猫，实时显示 Claude Code 的工作状态。本程序**仅适用于 Linux 桌面环境**，通过 Claude Code 的 Hooks 机制深度绑定 CLI 会话，为终端中的 Claude 交互增添一份陪伴感。
 
 ## 功能
 
@@ -11,6 +13,18 @@
 - 🎮 **命令行管理**：`neko start/stop/status` 管理小猫
 - 🖱️ **拖拽置顶**：可拖拽移动，始终置顶显示
 - ✨ **RGBA 透明**：原生透明背景，支持 Wayland 和 X11
+
+## 环境要求
+
+| 项目 | 要求 |
+|------|------|
+| 系统 | **Linux 桌面环境**（不支持 macOS / Windows） |
+| 终端 | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)（命令行版本） |
+| Python | 3.10+ |
+| GUI | GTK3（大多数 Linux 发行版自带） |
+| 显示 | X11 或 Wayland（GNOME 下自动走 XWayland） |
+
+> ⚠️ 本程序依赖 Claude Code 的 Hooks 机制获取实时状态，**不支持** Claude Desktop（桌面 GUI 版）或其他非 CLI 环境。
 
 ## 快速安装
 
@@ -114,7 +128,9 @@ Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.
 
 ## 与原项目的关系
 
-本项目是 [worddless1-dotcom/claude-desktop-buddy](https://github.com/worddless1-dotcom/claude-desktop-buddy)（Windows 桌面版）在 Linux 环境下的移植适配版本。原项目灵感来自 [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)（ESP32 硬件版）。
+本项目是 [worddless1-dotcom/claude-desktop-buddy](https://github.com/worddless1-dotcom/claude-desktop-buddy)（Windows 桌面版）在 **Linux CLI 环境**下的移植适配版本。原项目灵感来自 [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)（ESP32 硬件版）。
+
+与原项目的本质区别：原项目面向 Windows + Claude Desktop GUI，而 **Claude Neko 专为 Linux 终端下的 Claude Code CLI 打造**，通过 Hooks 实现事件驱动的深度集成。
 
 在移植过程中，针对 Linux 桌面环境做了大量适配和增强：
 
@@ -143,10 +159,18 @@ Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.
 
 ## 技术栈
 
-- Python 3.12+
+- Python 3.10+
 - GTK3 + Cairo（GUI，RGBA 透明背景）
 - Pillow（精灵图加载，转为 cairo.ImageSurface）
-- Claude Code Hooks（事件驱动）
+- **Claude Code CLI Hooks**（事件驱动，核心集成方式）
+
+## 测试
+
+```bash
+bash test_all.sh
+```
+
+覆盖 8 个阶段、52 项测试：基础 API、安全（路径遍历/畸形 JSON）、并发、等级边界、注册文件、多实例隔离、entries 截断、Shell 脚本校验。
 
 ## 许可证
 

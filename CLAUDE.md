@@ -32,7 +32,7 @@ neko disable   # 关闭自动启动
 neko status    # 查看状态
 ```
 
-没有测试套件、lint 工具或构建步骤。代码通过直接运行验证。
+测试：`bash test_all.sh`（52 项测试，覆盖 API、安全、并发、边界）。无 lint 工具或构建步骤。
 
 ## 架构
 
@@ -56,9 +56,9 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
                            buddy_widget.py (GTK3 + Cairo)
 ```
 
-**server.py** — HTTP 后端（`http.server`），端口 9100+（动态分配）。关键端点：
+**server.py** — HTTP 后端（`ThreadingTCPServer`），端口 9100+（动态分配）。关键端点：
 - `GET /api/state` — 返回当前状态 JSON
-- `POST /api/hook` — 接收事件：`pre_tool_use`、`post_tool_use`、`stop`、`permission_request`
+- `POST /api/hook` — 接收事件：`pre_tool_use`、`post_tool_use`、`stop`、`permission_request`、`session_end`、`cc_switch_update`
 - `POST /api/permission` — 审批/拒绝操作
 - `POST /api/shutdown` — 优雅关闭
 
@@ -77,6 +77,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 - `neko` — 命令行管理工具
 - `install.sh` / `uninstall.sh` — 一键安装/卸载
 - `start.sh` / `stop.sh` — 手动模式启动/停止
+- `test_all.sh` — 全面测试脚本（52 项）
 - `pids.txt` — 手动模式进程 PID 文件
 
 ## 安装后文件结构

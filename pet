@@ -1,0 +1,200 @@
+#!/bin/bash
+# Claude Neko — 管理命令
+# 用法: pet [start|stop|enable|disable|status]
+
+INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
+STATE_DIR="$HOME/.local/state/claude-desktop-pet"
+SESSIONS_DIR="$STATE_DIR/sessions"
+PYTHON="$INSTALL_DIR/venv/bin/python"
+SETTINGS_FILE="$HOME/.claude/settings.json"
+
+# ─── 颜色 ──────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# ─── start：拉起小猫 ──────────────────────────────────────
+cmd_start() {
+    mkdir -p "$SESSIONS_DIR"
+
+    # 清理残留
+    for f in "$SESSIONS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+        if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+            kill -0 "$PID" 2>/dev/null || rm -f "$f"
+        fi
+    done
+
+    # 找空闲端口
+    PORT=9100
+    for f in "$SESSIONS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        P=$(python3 -c "import json; print(json.load(open('$f')).get('port',0))" 2>/dev/null)
+        if [ -n "$P" ] && [ "$P" -ge "$PORT" ] 2>/dev/null; then
+            PORT=$((P + 1))
+        fi
+    done
+
+    # 窗口偏移
+    OFFSET=$(ls -1 "$SESSIONS_DIR"/*.json 2>/dev/null | wc -l)
+
+    # 生成 session id
+    SESSION_ID="manual-$(date +%s)"
+
+    # 启动 server
+    "$PYTHON" "$INSTALL_DIR/server.py" \
+        --port "$PORT" \
+        --session-id "$SESSION_ID" \
+        --state-dir "$STATE_DIR" &
+    local PID_SERVER=$!
+
+    # 等待就绪
+    for i in $(seq 1 10); do
+        curl -s "http://127.0.0.1:$PORT/api/state" >/dev/null 2>&1 && break
+        sleep 0.5
+    done
+
+    # 启动 buddy_widget
+    local BUDDY_ENV=""
+    [ "$XDG_SESSION_TYPE" = "wayland" ] && BUDDY_ENV="GDK_BACKEND=x11"
+    env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/buddy_widget.py" \
+        --port "$PORT" \
+        --offset "$OFFSET" &
+
+    echo -e "${GREEN}🐾 小猫已启动${NC} (port=$PORT, offset=$OFFSET)"
+}
+
+# ─── stop：关闭小猫 ──────────────────────────────────────
+cmd_stop() {
+    local STOPPED=0
+
+    # 通过注册文件关闭
+    for f in "$SESSIONS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        local PORT=$(python3 -c "import json; print(json.load(open('$f')).get('port',0))" 2>/dev/null)
+        local PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+        if [ -n "$PORT" ] && [ "$PORT" != "0" ]; then
+            curl -s -X POST "http://127.0.0.1:$PORT/api/shutdown" >/dev/null 2>&1
+        fi
+        if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+            kill "$PID" 2>/dev/null && STOPPED=$((STOPPED + 1))
+        fi
+    done
+
+    # 兜底：杀所有相关进程
+    ps aux | grep -E "server\.py|buddy_widget\.py" | grep -v grep | awk '{print $2}' | xargs -r kill 2>/dev/null && STOPPED=$((STOPPED + 1))
+
+    rm -f "$SESSIONS_DIR"/*.json
+
+    if [ "$STOPPED" -gt 0 ]; then
+        echo -e "${GREEN}🐱 小猫已关闭${NC}"
+    else
+        echo -e "${YELLOW}⚠️  没有运行中的小猫${NC}"
+    fi
+}
+
+# ─── enable：开启自动启动 ──────────────────────────────────
+cmd_enable() {
+    bash "$INSTALL_DIR/install.sh"
+}
+
+# ─── disable：关闭自动启动 ────────────────────────────────
+cmd_disable() {
+    # 只移除 hooks，不卸载代码
+    python3 << 'PYEOF'
+import json
+from pathlib import Path
+
+settings_file = Path.home() / ".claude" / "settings.json"
+if not settings_file.exists():
+    print("⚠️  settings.json 不存在")
+    exit(0)
+
+settings = json.loads(settings_file.read_text())
+hooks = settings.get("hooks", {})
+cleaned = {}
+removed = False
+
+for event, matchers in hooks.items():
+    new_matchers = []
+    for matcher in matchers:
+        new_hooks = []
+        for h in matcher.get("hooks", []):
+            cmd = h.get("command", "")
+            if "claude-desktop-pet" in cmd:
+                removed = True
+            else:
+                new_hooks.append(h)
+        if new_hooks:
+            matcher["hooks"] = new_hooks
+            new_matchers.append(matcher)
+    if new_matchers:
+        cleaned[event] = new_matchers
+
+settings["hooks"] = cleaned
+if not settings["hooks"]:
+    del settings["hooks"]
+
+settings_file.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n")
+if removed:
+    print("✅ 已关闭自动启动（hooks 已移除）")
+else:
+    print("ℹ️  未找到相关 hooks 配置")
+PYEOF
+}
+
+# ─── status：查看状态 ────────────────────────────────────
+cmd_status() {
+    local COUNT=0
+    echo "🐾 Claude Neko 状态"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # 检查 hooks 是否启用
+    if grep -q "claude-desktop-pet" "$SETTINGS_FILE" 2>/dev/null; then
+        echo -e "  自动启动: ${GREEN}已开启${NC}"
+    else
+        echo -e "  自动启动: ${YELLOW}未开启${NC}"
+    fi
+
+    # 检查运行中的小猫
+    echo "  运行中的小猫:"
+    for f in "$SESSIONS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        local SID=$(python3 -c "import json; print(json.load(open('$f')).get('session_id','?'))" 2>/dev/null)
+        local PORT=$(python3 -c "import json; print(json.load(open('$f')).get('port','?'))" 2>/dev/null)
+        local PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server','?'))" 2>/dev/null)
+        if kill -0 "$PID" 2>/dev/null; then
+            local MODE=$(curl -s "http://127.0.0.1:$PORT/api/state" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode','?'))" 2>/dev/null)
+            echo -e "    ${GREEN}●${NC} $SID (port=$PORT, mode=$MODE)"
+            COUNT=$((COUNT + 1))
+        fi
+    done
+
+    if [ "$COUNT" -eq 0 ]; then
+        echo "    (无)"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# ─── 主入口 ──────────────────────────────────────────────
+case "${1:-help}" in
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    enable)  cmd_enable ;;
+    disable) cmd_disable ;;
+    status)  cmd_status ;;
+    *)
+        echo "Claude Neko 管理工具"
+        echo ""
+        echo "用法: pet <命令>"
+        echo ""
+        echo "命令:"
+        echo "  start    拉起一只小猫"
+        echo "  stop     关闭所有小猫"
+        echo "  enable   开启自动随 Claude 启动"
+        echo "  disable  关闭自动随 Claude 启动"
+        echo "  status   查看状态"
+        ;;
+esac

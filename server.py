@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
 """
-Claude Desktop Buddy — HTTP 后端
+Claude Neko — HTTP 后端
 接收监控数据，维护全局状态，供桌面悬浮窗轮询
+支持多实例：每只小猫独立端口，绑定一个 Claude 会话
 """
 
-import asyncio
 import json
 import time
+import argparse
+import threading
 from datetime import datetime
 from pathlib import Path
 from http.server import SimpleHTTPRequestHandler
 import socketserver
-import threading
 import urllib.parse
 
-# ─── 配置 ───────────────────────────────────────────────────
-CONFIG_PATH = Path(__file__).parent / "config.json"
+# ─── 命令行参数 ─────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, default=9100)
+parser.add_argument("--session-id", type=str, default=None)
+parser.add_argument("--state-dir", type=str,
+                    default=str(Path.home() / ".local" / "state" / "claude-desktop-pet"))
+args = parser.parse_args()
 
-def load_config():
-    default = {
-        "port": 8080,
-        "host": "127.0.0.1",
-    }
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            user = json.load(f)
-            default.update(user)
-    return default
-
-CFG = load_config()
+# ─── 运行时目录 ─────────────────────────────────────────────
+STATE_DIR = Path(args.state_dir)
+SESSIONS_DIR = STATE_DIR / "sessions"
+SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── 全局状态 ─────────────────────────────────────────────────
 state = {
@@ -49,7 +47,62 @@ state = {
     "last_update":   0,
     "tokens_total":  0,
     "pet":           {"style": "cat", "color": "#FF9F43"},
+    "session_id":    args.session_id,
+    "shutdown":      False,
 }
+
+# 最后一次收到事件的时间戳（用于心跳超时）
+last_event_time = time.time()
+
+# ─── 注册文件管理 ─────────────────────────────────────────────
+
+def write_registration(port):
+    """写入注册文件"""
+    if not args.session_id:
+        return
+    reg_file = SESSIONS_DIR / f"{args.session_id}.json"
+    reg_data = {
+        "session_id": args.session_id,
+        "port": port,
+        "pid_server": __import__('os').getpid(),
+        "created_at": datetime.now().isoformat(),
+    }
+    reg_file.write_text(json.dumps(reg_data, ensure_ascii=False, indent=2))
+
+
+def remove_registration():
+    """删除注册文件"""
+    if not args.session_id:
+        return
+    reg_file = SESSIONS_DIR / f"{args.session_id}.json"
+    reg_file.unlink(missing_ok=True)
+
+# ─── 心跳超时检查 ─────────────────────────────────────────────
+
+def heartbeat_checker():
+    """后台线程：检查心跳超时，120 秒无事件则自动关闭"""
+    global last_event_time
+    while True:
+        time.sleep(30)
+        if args.session_id and state["shutdown"]:
+            break
+        if args.session_id and (time.time() - last_event_time > 120):
+            print("⏰ 心跳超时，自动关闭")
+            do_shutdown()
+            break
+
+
+def do_shutdown():
+    """优雅关闭"""
+    global last_event_time
+    state["shutdown"] = True
+    remove_registration()
+    # 延迟退出，让 buddy_widget 有时间收到 shutdown 信号
+    def _exit():
+        time.sleep(2)
+        import os
+        os._exit(0)
+    threading.Thread(target=_exit, daemon=True).start()
 
 # ─── HTTP 服务 ─────────────────────────────────────────────
 
@@ -69,7 +122,20 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        global last_event_time
         parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path == "/api/shutdown":
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length) if length else None
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True}).encode())
+            do_shutdown()
+            return
+
         if parsed.path == "/api/permission":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
@@ -78,8 +144,12 @@ class Handler(SimpleHTTPRequestHandler):
             if state["prompt"] and state["prompt"]["id"] == prompt_id:
                 if decision == "once":
                     state["approve_count"] += 1
+                    state["mode"] = "heart"
+                    state["msg"] = "Approved!"
                 else:
                     state["deny_count"] += 1
+                    state["mode"] = "idle"
+                    state["msg"] = "Denied"
                 state["prompt"] = None
                 state["waiting"] = 0
             self.send_response(200)
@@ -88,26 +158,49 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
             return
+
         if parsed.path == "/api/hook":
+            last_event_time = time.time()
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             event = body.get("event", "")
+
             if event == "pre_tool_use":
-                state["running"] = max(1, state["running"])
+                state["running"] += 1
                 state["mode"] = "busy"
-                state["msg"] = body.get("msg", "")
+                state["msg"] = body.get("msg", "")[:40]
                 state["connected"] = True
                 state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
+
             elif event == "post_tool_use":
                 state["running"] = max(0, state["running"] - 1)
                 if state["running"] == 0 and state["waiting"] == 0:
                     state["mode"] = "idle"
-                state["msg"] = body.get("msg", "")
+                    state["msg"] = "Thinking"
+                else:
+                    state["msg"] = body.get("msg", "")[:40]
+
             elif event == "stop":
                 state["running"] = 0
                 state["waiting"] = 0
                 state["mode"] = "idle"
-                state["msg"] = body.get("msg", "任务完成 ✓")
+                state["msg"] = "Ready"
+
+            elif event == "permission_request":
+                state["mode"] = "attention"
+                state["waiting"] = 1
+                state["prompt"] = body.get("prompt")
+                state["msg"] = body.get("msg", "Approval needed")
+
+            elif event == "session_end":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True}).encode())
+                do_shutdown()
+                return
+
             elif event == "cc_switch_update":
                 state["mode"] = body.get("mode", "idle")
                 state["msg"] = body.get("msg", "")
@@ -127,36 +220,53 @@ class Handler(SimpleHTTPRequestHandler):
                 for th, lv in LEVEL_TABLE:
                     if state["tokens_total"] >= th:
                         state["level"] = lv
+
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
             return
+
         self.send_error(404)
 
     def log_message(self, format, *args):
         pass  # 静默日志
 
+
 def start_http_server():
-    with socketserver.TCPServer((CFG["host"], CFG["port"]), Handler) as httpd:
+    with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
         httpd.serve_forever()
 
-async def main():
-    url = f"http://{CFG['host']}:{CFG['port']}"
-    print(f"\n🐾 Claude Desktop Buddy")
+
+def main():
+    print(f"\n🐾 Claude Neko")
     print(f"{'─' * 40}")
-    print(f"🌐 {url}")
+    print(f"🌐 http://127.0.0.1:{args.port}")
+    if args.session_id:
+        print(f"🔗 Session: {args.session_id[:12]}...")
     print(f"{'─' * 40}\n")
 
+    # 写注册文件
+    write_registration(args.port)
+
+    # 启动心跳检查线程（仅自动模式）
+    if args.session_id:
+        threading.Thread(target=heartbeat_checker, daemon=True).start()
+
+    # 启动 HTTP 服务
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
 
-    print("按 Ctrl+C 退出\n")
-    await asyncio.Event().wait()
-
-if __name__ == "__main__":
+    # 等待关闭信号
     try:
-        asyncio.run(main())
+        while not state["shutdown"]:
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nBye!")
+    finally:
+        remove_registration()
+
+
+if __name__ == "__main__":
+    main()

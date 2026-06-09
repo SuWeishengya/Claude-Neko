@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Claude Code 会话监控 → Desktop Buddy 桥接
+Claude Code 会话监控 → Desktop Neko 桥接
 直接从 ~/.claude 的 session jsonl 文件读取 token 使用数据
 """
 

@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-Claude Desktop Buddy — GTK3 桌面悬浮窗
+Claude Neko — GTK3 桌面悬浮窗
 使用 Cairo 绘制，RGBA 透明背景，支持 Wayland + X11
+支持多实例：每只小猫独立端口，窗口自动偏移
 """
+
+import os
+import argparse
+
+# GNOME Wayland 下强制走 XWayland，以支持置顶和拖拽
+if os.environ.get("XDG_SESSION_TYPE") == "wayland" and not os.environ.get("GDK_BACKEND"):
+    os.environ["GDK_BACKEND"] = "x11"
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -12,8 +20,18 @@ import json, time, math, random, urllib.request, threading
 from pathlib import Path
 from PIL import Image
 
+# ─── 命令行参数 ─────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, default=9100)
+parser.add_argument("--offset", type=int, default=0)
+parser.add_argument("--state-dir", type=str,
+                    default=str(Path.home() / ".local" / "state" / "claude-desktop-pet"))
+args = parser.parse_args()
+
 CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
 ASSETS = Path(__file__).parent / "assets" / "cat"
+
+API_URL = f"http://127.0.0.1:{args.port}"
 
 COLORS = {
     "sleep": (0.49, 0.49, 0.60),    # #7c7c9a
@@ -65,11 +83,10 @@ def load_sprites():
 class BuddyApp:
     def __init__(self):
         self.win = Gtk.Window()
-        self.win.set_title("Claude Desktop Buddy")
+        self.win.set_title("Claude Neko")
         self.win.set_default_size(W, H)
         self.win.set_decorated(False)
         self.win.set_app_paintable(True)
-        self.win.set_keep_above(True)
         self.win.set_resizable(False)
 
         # RGBA 透明背景
@@ -78,20 +95,27 @@ class BuddyApp:
         if rgba:
             self.win.set_visual(rgba)
 
-        # 窗口位置：屏幕右上角
+        # 置顶（X11 下 set_keep_above 有效）
+        self.win.set_keep_above(True)
+
+        # 窗口位置：屏幕右上角 + 偏移（多实例错开）
         display = Gdk.Display.get_default()
         monitor = display.get_primary_monitor() or display.get_monitor(0)
         geo = monitor.get_geometry()
-        self.win.move(geo.x + geo.width - W - 20, geo.y + 40)
+        offset = args.offset * 30
+        x = geo.x + geo.width - W - 20 + offset
+        y = geo.y + 40 + offset
+        # 超出屏幕右边缘则换行
+        if x + W > geo.x + geo.width:
+            x = geo.x + geo.width - W - 20
+            y = geo.y + 40 + (offset % 200)
+        self.win.move(x, y)
 
         # 拖拽支持
-        self._drag_start = None
         self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
                             Gdk.EventMask.BUTTON_RELEASE_MASK |
                             Gdk.EventMask.POINTER_MOTION_MASK)
         self.win.connect("button-press-event", self._on_button_press)
-        self.win.connect("button-release-event", self._on_button_release)
-        self.win.connect("motion-notify-event", self._on_motion)
 
         # 绘制
         self.win.connect("draw", self._on_draw)
@@ -114,41 +138,44 @@ class BuddyApp:
         GLib.timeout_add(FPS_MS, self._tick)
         GLib.timeout_add(500, self._poll)
 
+        # X11/XWayland 下定期刷新 set_keep_above
+        GLib.timeout_add(5000, lambda: (self.win.set_keep_above(True), True)[-1])
+
+        # shutdown 检测
+        self._shutdown = False
+
     # ─── 拖拽 ───────────────────────────────────────────────
     def _on_button_press(self, widget, event):
         if event.button == 1:
-            self._drag_start = (event.x_root, event.y_root)
+            self.win.begin_move_drag(int(event.button), int(event.x_root), int(event.y_root), event.time)
         return True
-
-    def _on_button_release(self, widget, event):
-        self._drag_start = None
-
-    def _on_motion(self, widget, event):
-        if self._drag_start:
-            dx = event.x_root - self._drag_start[0]
-            dy = event.y_root - self._drag_start[1]
-            x, y = self.win.get_position()
-            self.win.move(x + int(dx), y + int(dy))
-            self._drag_start = (event.x_root, event.y_root)
 
     # ─── 状态轮询 ───────────────────────────────────────────
     def _poll(self):
         def fetch():
             try:
-                r = urllib.request.urlopen(
-                    f"http://{CONFIG['host']}:{CONFIG['port']}/api/state", timeout=1)
+                r = urllib.request.urlopen(f"{API_URL}/api/state", timeout=1)
                 data = json.loads(r.read())
                 GLib.idle_add(self._update_state, data)
             except Exception:
                 pass
         threading.Thread(target=fetch, daemon=True).start()
-        return True  # 继续定时
+        return True
 
     def _update_state(self, data):
         self.sd = data
-        self.mode = data.get("mode", "sleep")
+        self.mode = data.get("mode", "idle")
+        # 检查 shutdown 信号
+        if data.get("shutdown"):
+            self._do_exit()
+            return False
         self.win.queue_draw()
         return False
+
+    def _do_exit(self):
+        """优雅退出"""
+        self._shutdown = True
+        Gtk.main_quit()
 
     # ─── 审批操作 ────────────────────────────────────────────
     def _decide(self, decision):
@@ -158,7 +185,7 @@ class BuddyApp:
         def post():
             try:
                 req = urllib.request.Request(
-                    f"http://{CONFIG['host']}:{CONFIG['port']}/api/permission",
+                    f"{API_URL}/api/permission",
                     data=json.dumps({"id": pid, "decision": decision}).encode(),
                     headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(req, timeout=2)
@@ -168,6 +195,8 @@ class BuddyApp:
 
     # ─── 定时刷新 ───────────────────────────────────────────
     def _tick(self):
+        if self._shutdown:
+            return False
         self.frame_idx = int(time.time() * 2) % max(
             (len(v) for v in self.sprite_frames.values()), default=1)
 
@@ -187,31 +216,27 @@ class BuddyApp:
         self.particles = [p for p in self.particles if p[2] > 0]
 
         self.win.queue_draw()
-        return True  # 继续定时
+        return True
 
     # ─── 绘制 ───────────────────────────────────────────────
     def _on_draw(self, widget, cr):
-        # 1. 清除为全透明
         cr.set_operator(cairo.OPERATOR_SOURCE)
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
-
         cr.set_operator(cairo.OPERATOR_OVER)
 
-        # 2. 绘制精灵图
         self._draw_pet(cr)
-
-        # 3. 绘制粒子效果
         self._draw_fx(cr)
-
-        # 4. 绘制 UI 文字
         self._draw_ui(cr)
-
-        # 5. 绘制审批弹窗
         self._draw_approval(cr)
 
     def _draw_pet(self, cr):
-        frames = self.sprite_frames.get(self.mode) or self.sprite_frames.get("idle", [])
+        # idle + "Ready" → 用 sleep 图标（空闲睡觉）
+        # idle + "Thinking" → 用 idle 图标（思考中）
+        draw_mode = self.mode
+        if self.mode == "idle" and self.sd.get("msg") == "Ready":
+            draw_mode = "sleep"
+        frames = self.sprite_frames.get(draw_mode) or self.sprite_frames.get("idle", [])
         if not frames:
             return
         surface = frames[self.frame_idx % len(frames)]
@@ -219,11 +244,6 @@ class BuddyApp:
         cx = W / 2
         cy = H / 2 + 8
 
-        # idle/busy/attention/heart 浮动
-        if self.mode in ("idle", "busy", "attention", "heart", "angry"):
-            pass  # TODO: bob effect
-
-        # celebrate 跳跃
         if self.mode == "celebrate":
             cy -= abs(math.sin(time.time() * 5)) * 12
 
@@ -235,7 +255,6 @@ class BuddyApp:
     def _draw_fx(self, cr):
         for p in self.particles:
             x, y, life, ch, color_hex = p
-            # 解析颜色
             r = int(color_hex[1:3], 16) / 255
             g = int(color_hex[3:5], 16) / 255
             b = int(color_hex[5:7], 16) / 255
@@ -247,87 +266,103 @@ class BuddyApp:
 
     def _draw_ui(self, cr):
         sd = self.sd
+        pet_bottom = H // 2 + 8 + PET_SIZE // 2 + 8
+        y = pet_bottom
 
-        # 状态文字
-        msg = MSGS.get(self.mode, "")
+        # 状态文字（优先显示 msg，否则用默认 MSGS）
+        msg = sd.get("msg") or MSGS.get(self.mode, "")
+        if not msg:
+            msg = MSGS.get(self.mode, "")
+        # 截断过长文字
+        if len(msg) > 20:
+            msg = msg[:18] + ".."
         cr.select_font_face("Monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
         cr.set_font_size(13)
-        cr.set_source_rgba(0.545, 0.580, 0.620, 1)  # #8b949e
-        ext = cr.text_extents(msg)
-        cr.move_to(W / 2 - ext.width / 2, H - 42)
-        cr.show_text(msg)
-
-        # 等级 + token 数
-        t = sd.get("tokens_total", 0)
-        if t >= 1_000_000_000:
-            ts = f"{t/1_000_000_000:.1f}B"
-        elif t >= 1_000_000:
-            ts = f"{t/1_000_000:.1f}M"
-        elif t >= 1000:
-            ts = f"{t/1000:.1f}K"
-        else:
-            ts = str(t)
-        level_text = f"Lv.{sd.get('level', 1)} {ts}tok"
-        cr.set_font_size(11)
-        cr.set_source_rgba(0.345, 0.647, 1.0, 1)  # #58a6ff
-        ext = cr.text_extents(level_text)
-        cr.move_to(W / 2 - ext.width / 2, H - 22)
-        cr.show_text(level_text)
-
-        # 审批/拒绝计数
-        count_text = f"v{sd.get('approve_count', 0)} x{sd.get('deny_count', 0)}"
         cr.set_source_rgba(0.545, 0.580, 0.620, 1)
-        ext = cr.text_extents(count_text)
-        cr.move_to(W / 2 - ext.width / 2, H - 6)
-        cr.show_text(count_text)
+        ext = cr.text_extents(msg)
+        cr.move_to(W / 2 - ext.width / 2, y)
+        cr.show_text(msg)
+        y += 16
+
+        # 等级 + token 数（可选）
+        if CONFIG.get("show_level"):
+            t = sd.get("tokens_total", 0)
+            if t >= 1_000_000_000:
+                ts = f"{t/1_000_000_000:.1f}B"
+            elif t >= 1_000_000:
+                ts = f"{t/1_000_000:.1f}M"
+            elif t >= 1000:
+                ts = f"{t/1000:.1f}K"
+            else:
+                ts = str(t)
+            level_text = f"Lv.{sd.get('level', 1)} {ts}tok"
+            cr.set_font_size(11)
+            cr.set_source_rgba(0.345, 0.647, 1.0, 1)
+            ext = cr.text_extents(level_text)
+            cr.move_to(W / 2 - ext.width / 2, y)
+            cr.show_text(level_text)
+            y += 14
+
+        # 审批/拒绝计数（可选）
+        if CONFIG.get("show_counts"):
+            count_text = f"v{sd.get('approve_count', 0)} x{sd.get('deny_count', 0)}"
+            cr.set_source_rgba(0.545, 0.580, 0.620, 1)
+            ext = cr.text_extents(count_text)
+            cr.move_to(W / 2 - ext.width / 2, y)
+            cr.show_text(count_text)
 
     def _draw_approval(self, cr):
         p = self.sd.get("prompt")
         if not p:
             return
 
-        y0 = H - 155
-        # 弹窗背景
-        cr.set_source_rgba(0.11, 0.07, 0.03, 0.95)  # #1c1207
-        self._rounded_rect(cr, 8, y0, W - 16, 65, 6)
+        # 审批框显示在小猫上方，宽度与小猫一致
+        pet_top = H // 2 + 8 - PET_SIZE // 2
+        box_h = 52
+        box_w = PET_SIZE + 16  # 126px，比小猫宽一点
+        box_x = (W - box_w) // 2 + 4
+        y0 = pet_top - box_h - 8
+
+        cr.set_source_rgba(0.11, 0.07, 0.03, 0.95)
+        self._rounded_rect(cr, box_x, y0, box_w, box_h, 6)
         cr.fill()
-        # 边框
-        cr.set_source_rgba(0.82, 0.60, 0.13, 1)  # #d29922
-        self._rounded_rect(cr, 8, y0, W - 16, 65, 6)
+        cr.set_source_rgba(0.82, 0.60, 0.13, 1)
+        self._rounded_rect(cr, box_x, y0, box_w, box_h, 6)
         cr.stroke()
 
-        # 标题
-        cr.set_font_size(13)
+        # 标题 + 工具名（只显示工具名关键字）
+        cr.set_font_size(12)
         cr.set_source_rgba(0.82, 0.60, 0.13, 1)
-        ext = cr.text_extents("Approval!")
-        cr.move_to(W / 2 - ext.width / 2, y0 + 15)
-        cr.show_text("Approval!")
+        tool_text = p.get("tool", "?")
+        label = f"Approve: {tool_text}"
+        ext = cr.text_extents(label)
+        cr.move_to(W / 2 - ext.width / 2, y0 + 14)
+        cr.show_text(label)
 
-        # 工具名
-        cr.set_font_size(10)
-        cr.set_source_rgba(0.90, 0.93, 0.95, 1)  # #e6edf3
-        tool_text = p.get("tool", "-")
-        ext = cr.text_extents(tool_text)
-        cr.move_to(W / 2 - ext.width / 2, y0 + 30)
-        cr.show_text(tool_text)
+        # 小提示
+        hint = p.get("hint", "")
+        if hint:
+            if len(hint) > 22:
+                hint = hint[:20] + ".."
+            cr.set_font_size(9)
+            cr.set_source_rgba(0.545, 0.580, 0.620, 1)
+            ext = cr.text_extents(hint)
+            cr.move_to(W / 2 - ext.width / 2, y0 + 26)
+            cr.show_text(hint)
 
-        # 提示
-        hint = p.get("hint", "-")
-        if len(hint) > 26:
-            hint = hint[:24] + ".."
-        cr.set_source_rgba(0.545, 0.580, 0.620, 1)
-        ext = cr.text_extents(hint)
-        cr.move_to(W / 2 - ext.width / 2, y0 + 44)
-        cr.show_text(hint)
-
-        # Approve 按钮
-        self._draw_button(cr, 12, H - 108, W // 2 - 16, 18,
-                          "Approve", (0.137, 0.525, 0.212, 1),  # #238636
+        # 小按钮（居中对称）
+        btn_y = y0 + box_h - 20
+        btn_h = 14
+        gap = 6
+        btn_w = (box_w - gap * 3) // 2
+        btn_left_x = box_x + gap
+        btn_right_x = box_x + gap * 2 + btn_w
+        self._draw_button(cr, btn_left_x, btn_y, btn_w, btn_h,
+                          "Approve", (0.137, 0.525, 0.212, 1),
                           (1, 1, 1, 1), "once")
-        # Deny 按钮
-        self._draw_button(cr, W // 2 + 4, H - 108, W // 2 - 16, 18,
-                          "Deny", (0.19, 0.21, 0.24, 1),  # #30363d
-                          (0.90, 0.93, 0.95, 1), "deny")  # #e6edf3
+        self._draw_button(cr, btn_right_x, btn_y, btn_w, btn_h,
+                          "Deny", (0.19, 0.21, 0.24, 1),
+                          (0.90, 0.93, 0.95, 1), "deny")
 
     def _draw_button(self, cr, x, y, w, h, label, bg_color, text_color, decision):
         cr.set_source_rgba(*bg_color)

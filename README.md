@@ -15,8 +15,8 @@
 ## 快速安装
 
 ```bash
-git clone https://github.com/SuWeishengya/claude-neko.git
-cd claude-neko
+git clone https://github.com/SuWeishengya/Claude-Neko.git
+cd Claude-Neko
 chmod +x install.sh
 ./install.sh
 ```

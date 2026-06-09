@@ -55,7 +55,7 @@ if [ "$SCRIPT_DIR" = "$INSTALL_DIR" ]; then
     echo "  已在安装目录，跳过文件复制"
 else
     # 复制文件
-    for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh neko config.json test_all.sh; do
+    for f in server.py buddy_widget.py hook_bridge.py launch.sh stop.sh neko config.json uninstall.sh; do
         if [ -f "$SCRIPT_DIR/$f" ]; then
             cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
         fi
@@ -67,8 +67,8 @@ else
     fi
 fi
 
-# 设置可执行权限
-chmod +x "$INSTALL_DIR/launch.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/hook_bridge.py" "$INSTALL_DIR/neko"
+# 设置可执行权限（仅对存在的文件操作，避免 set -e 中止）
+chmod +x "$INSTALL_DIR/launch.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/hook_bridge.py" "$INSTALL_DIR/neko" 2>/dev/null || true
 
 # 创建全局命令链接
 mkdir -p "$HOME/.local/bin"

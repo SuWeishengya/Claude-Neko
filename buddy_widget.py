@@ -1,44 +1,43 @@
 #!/usr/bin/env python3
 """
-Claude Desktop Buddy — tkinter 桌面悬浮窗（精灵图版）
+Claude Desktop Buddy — GTK3 桌面悬浮窗
+使用 Cairo 绘制，RGBA 透明背景，支持 Wayland + X11
 """
 
-import tkinter as tk
-from tkinter import font as tkfont
-import json, time, urllib.request, threading
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib
+import cairo
+import json, time, math, random, urllib.request, threading
 from pathlib import Path
-
-try:
-    from PIL import Image, ImageTk
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
+from PIL import Image
 
 CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
 ASSETS = Path(__file__).parent / "assets" / "cat"
 
 COLORS = {
-    "sleep":"#7c7c9a","idle":"#FF9F43","busy":"#e17055",
-    "attention":"#fdcb6e","celebrate":"#00cec9","heart":"#e84393",
-    "angry":"#e17055",
+    "sleep": (0.49, 0.49, 0.60),    # #7c7c9a
+    "idle":  (1.00, 0.62, 0.26),    # #FF9F43
+    "busy":  (0.88, 0.44, 0.33),    # #e17055
+    "attention": (0.99, 0.80, 0.37),# #fdcb6e
+    "celebrate": (0.00, 0.81, 0.79),# #00cec9
+    "heart": (0.91, 0.26, 0.58),    # #e84393
+    "angry": (0.88, 0.44, 0.33),    # #e17055
 }
 MSGS = {
-    "sleep":"zZz...","idle":"Ready","busy":"Working...",
-    "attention":"Approval!","celebrate":"Level Up!","heart":"Approved!",
-    "angry":"Hmph!",
+    "sleep": "zZz...", "idle": "Ready", "busy": "Working...",
+    "attention": "Approval!", "celebrate": "Level Up!", "heart": "Approved!",
+    "angry": "Hmph!",
 }
 
-# 宠物精灵图尺寸
 PET_SIZE = 110
 W, H = 170, 240
-FPS_MS = 500  # 帧动画刷新间隔 ms
+FPS_MS = 500
 
 
 def load_sprites():
-    """加载所有状态的精灵图，返回 {state: [ImageTk, ...]}"""
+    """加载所有状态的精灵图，返回 {state: [cairo.ImageSurface, ...]}"""
     sprites = {}
-    if not HAS_PIL:
-        return sprites
     for state in list(COLORS.keys()) + ["normal"]:
         folder = ASSETS / state
         if not folder.exists():
@@ -48,9 +47,16 @@ def load_sprites():
             f = folder / f"frame_{i}.png"
             if not f.exists():
                 break
-            img = Image.open(f).convert("RGBA")
-            img = img.resize((PET_SIZE, PET_SIZE), Image.NEAREST)
-            frames.append(img)
+            img = Image.open(f).convert("RGBA").resize((PET_SIZE, PET_SIZE), Image.NEAREST)
+            # PIL → cairo ImageSurface
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, PET_SIZE, PET_SIZE)
+            ctx = cairo.Context(surface)
+            # 将 PIL 像素写入 cairo surface
+            pil_data = img.tobytes('raw', 'BGRA')
+            cairo_data = surface.get_data()
+            cairo_data[:] = pil_data
+            surface.mark_dirty()
+            frames.append(surface)
         if frames:
             sprites[state] = frames
     return sprites
@@ -58,90 +64,200 @@ def load_sprites():
 
 class BuddyApp:
     def __init__(self):
-        self.root = tk.Tk()
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-transparentcolor", "#0d1117")
-        self.root.configure(bg="#0d1117")
+        self.win = Gtk.Window()
+        self.win.set_title("Claude Desktop Buddy")
+        self.win.set_default_size(W, H)
+        self.win.set_decorated(False)
+        self.win.set_app_paintable(True)
+        self.win.set_keep_above(True)
+        self.win.set_resizable(False)
 
-        sw = self.root.winfo_screenwidth()
-        x = sw - W - 20
-        self.root.geometry(f"{W}x{H}+{x}+40")
+        # RGBA 透明背景
+        screen = self.win.get_screen()
+        rgba = screen.get_rgba_visual()
+        if rgba:
+            self.win.set_visual(rgba)
 
-        self._dx = self._dy = 0
-        self.root.bind("<Button-1>", self._drag_start)
-        self.root.bind("<B1-Motion>", self._drag_move)
+        # 窗口位置：屏幕右上角
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        geo = monitor.get_geometry()
+        self.win.move(geo.x + geo.width - W - 20, geo.y + 40)
 
-        self.canvas = tk.Canvas(self.root, width=W, height=H, bg="#0d1117", highlightthickness=0)
-        self.canvas.pack()
+        # 拖拽支持
+        self._drag_start = None
+        self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
+                            Gdk.EventMask.BUTTON_RELEASE_MASK |
+                            Gdk.EventMask.POINTER_MOTION_MASK)
+        self.win.connect("button-press-event", self._on_button_press)
+        self.win.connect("button-release-event", self._on_button_release)
+        self.win.connect("motion-notify-event", self._on_motion)
 
-        self.f_sm = tkfont.Font(family="Consolas", size=12, weight="bold")
-        self.f_xs = tkfont.Font(family="Consolas", size=10)
+        # 绘制
+        self.win.connect("draw", self._on_draw)
 
+        # 状态
         self.mode = "idle"
-        self.bob = 0.0
         self.frame_idx = 0
         self.particles = []
         self.sd = {}
 
         # 加载精灵图
-        raw = load_sprites()
-        self.sprite_frames = {}  # {state: [ImageTk, ...]}
-        for state, imgs in raw.items():
-            self.sprite_frames[state] = [ImageTk.PhotoImage(im) for im in imgs]
-
-        # 为缺失的状态准备 fallback（用 idle 的第一帧）
-        fallback = self.sprite_frames.get("idle", [None])[0] if "idle" in self.sprite_frames else None
+        self.sprite_frames = load_sprites()
+        # 为缺失的状态准备 fallback
+        fallback = self.sprite_frames.get("idle", [None])[0]
         for state in COLORS:
             if state not in self.sprite_frames and fallback:
                 self.sprite_frames[state] = [fallback]
 
-        self._pet_img_id = None
-        self._tick()
-        self._poll()
+        # 定时器
+        GLib.timeout_add(FPS_MS, self._tick)
+        GLib.timeout_add(500, self._poll)
 
-    def _drag_start(self, e):
-        self._dx, self._dy = e.x, e.y
+    # ─── 拖拽 ───────────────────────────────────────────────
+    def _on_button_press(self, widget, event):
+        if event.button == 1:
+            self._drag_start = (event.x_root, event.y_root)
+        return True
 
-    def _drag_move(self, e):
-        self.root.geometry(f"+{self.root.winfo_x()+e.x-self._dx}+{self.root.winfo_y()+e.y-self._dy}")
+    def _on_button_release(self, widget, event):
+        self._drag_start = None
 
-    def _get_sprite(self):
-        """获取当前状态的当前帧 ImageTk"""
-        frames = self.sprite_frames.get(self.mode)
-        if not frames:
-            frames = self.sprite_frames.get("idle", [None])
-        return frames[self.frame_idx % len(frames)]
+    def _on_motion(self, widget, event):
+        if self._drag_start:
+            dx = event.x_root - self._drag_start[0]
+            dy = event.y_root - self._drag_start[1]
+            x, y = self.win.get_position()
+            self.win.move(x + int(dx), y + int(dy))
+            self._drag_start = (event.x_root, event.y_root)
 
-    def _draw_pet(self):
-        c = self.canvas
-        c.delete("pet")
-        img = self._get_sprite()
-        if not img:
+    # ─── 状态轮询 ───────────────────────────────────────────
+    def _poll(self):
+        def fetch():
+            try:
+                r = urllib.request.urlopen(
+                    f"http://{CONFIG['host']}:{CONFIG['port']}/api/state", timeout=1)
+                data = json.loads(r.read())
+                GLib.idle_add(self._update_state, data)
+            except Exception:
+                pass
+        threading.Thread(target=fetch, daemon=True).start()
+        return True  # 继续定时
+
+    def _update_state(self, data):
+        self.sd = data
+        self.mode = data.get("mode", "sleep")
+        self.win.queue_draw()
+        return False
+
+    # ─── 审批操作 ────────────────────────────────────────────
+    def _decide(self, decision):
+        pid = self.sd.get("prompt", {}).get("id")
+        if not pid:
             return
+        def post():
+            try:
+                req = urllib.request.Request(
+                    f"http://{CONFIG['host']}:{CONFIG['port']}/api/permission",
+                    data=json.dumps({"id": pid, "decision": decision}).encode(),
+                    headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=2)
+            except Exception:
+                pass
+        threading.Thread(target=post, daemon=True).start()
 
-        cx, cy = W // 2, H // 2 + 8
+    # ─── 定时刷新 ───────────────────────────────────────────
+    def _tick(self):
+        self.frame_idx = int(time.time() * 2) % max(
+            (len(v) for v in self.sprite_frames.values()), default=1)
 
-        # idle/busy/attention/heart 上下浮动
+        # 粒子效果
+        if self.mode == "celebrate" and random.random() < 0.3:
+            self.particles.append([random.uniform(20, W-20), 40, 1.0,
+                                   random.choice(["*", "+", "~"]),
+                                   random.choice(["#fdcb6e", "#e17055", "#00cec9"])])
+        if self.mode == "sleep" and random.random() < 0.08:
+            self.particles.append([W//2 + random.uniform(-5, 15), 30, 1.0, "z", "#6a6a8a"])
+        if self.mode == "heart" and random.random() < 0.12:
+            self.particles.append([random.uniform(30, W-30), 45, 1.0, "<3", "#e84393"])
+
+        for p in self.particles:
+            p[1] -= 0.8
+            p[2] -= 0.015
+        self.particles = [p for p in self.particles if p[2] > 0]
+
+        self.win.queue_draw()
+        return True  # 继续定时
+
+    # ─── 绘制 ───────────────────────────────────────────────
+    def _on_draw(self, widget, cr):
+        # 1. 清除为全透明
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+
+        cr.set_operator(cairo.OPERATOR_OVER)
+
+        # 2. 绘制精灵图
+        self._draw_pet(cr)
+
+        # 3. 绘制粒子效果
+        self._draw_fx(cr)
+
+        # 4. 绘制 UI 文字
+        self._draw_ui(cr)
+
+        # 5. 绘制审批弹窗
+        self._draw_approval(cr)
+
+    def _draw_pet(self, cr):
+        frames = self.sprite_frames.get(self.mode) or self.sprite_frames.get("idle", [])
+        if not frames:
+            return
+        surface = frames[self.frame_idx % len(frames)]
+
+        cx = W / 2
+        cy = H / 2 + 8
+
+        # idle/busy/attention/heart 浮动
         if self.mode in ("idle", "busy", "attention", "heart", "angry"):
-            cy += int(self.bob)
+            pass  # TODO: bob effect
 
         # celebrate 跳跃
         if self.mode == "celebrate":
-            import math
-            cy -= int(abs(math.sin(time.time() * 5)) * 12)
+            cy -= abs(math.sin(time.time() * 5)) * 12
 
-        self._pet_img_id = c.create_image(cx, cy, image=img, tags="pet")
+        x = cx - PET_SIZE / 2
+        y = cy - PET_SIZE / 2
+        cr.set_source_surface(surface, x, y)
+        cr.paint()
 
-    def _draw_ui(self):
-        c = self.canvas
-        c.delete("ui")
+    def _draw_fx(self, cr):
+        for p in self.particles:
+            x, y, life, ch, color_hex = p
+            # 解析颜色
+            r = int(color_hex[1:3], 16) / 255
+            g = int(color_hex[3:5], 16) / 255
+            b = int(color_hex[5:7], 16) / 255
+            cr.set_source_rgba(r, g, b, life)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(12)
+            cr.move_to(x, y)
+            cr.show_text(ch)
+
+    def _draw_ui(self, cr):
+        sd = self.sd
 
         # 状态文字
-        c.create_text(W//2, H - 42, text=MSGS.get(self.mode, ""), fill="#8b949e", font=self.f_sm, tags="ui")
+        msg = MSGS.get(self.mode, "")
+        cr.select_font_face("Monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(13)
+        cr.set_source_rgba(0.545, 0.580, 0.620, 1)  # #8b949e
+        ext = cr.text_extents(msg)
+        cr.move_to(W / 2 - ext.width / 2, H - 42)
+        cr.show_text(msg)
 
         # 等级 + token 数
-        sd = self.sd
         t = sd.get("tokens_total", 0)
         if t >= 1_000_000_000:
             ts = f"{t/1_000_000_000:.1f}B"
@@ -151,92 +267,90 @@ class BuddyApp:
             ts = f"{t/1000:.1f}K"
         else:
             ts = str(t)
-        c.create_text(W//2, H - 22, text=f"Lv.{sd.get('level',1)} {ts}tok", fill="#58a6ff", font=self.f_xs, tags="ui")
+        level_text = f"Lv.{sd.get('level', 1)} {ts}tok"
+        cr.set_font_size(11)
+        cr.set_source_rgba(0.345, 0.647, 1.0, 1)  # #58a6ff
+        ext = cr.text_extents(level_text)
+        cr.move_to(W / 2 - ext.width / 2, H - 22)
+        cr.show_text(level_text)
 
         # 审批/拒绝计数
-        c.create_text(W//2, H - 6, text=f"v{sd.get('approve_count',0)} x{sd.get('deny_count',0)}", fill="#8b949e", font=self.f_xs, tags="ui")
+        count_text = f"v{sd.get('approve_count', 0)} x{sd.get('deny_count', 0)}"
+        cr.set_source_rgba(0.545, 0.580, 0.620, 1)
+        ext = cr.text_extents(count_text)
+        cr.move_to(W / 2 - ext.width / 2, H - 6)
+        cr.show_text(count_text)
 
-        # 权限审批弹窗
-        p = sd.get("prompt")
-        if p:
-            y0 = H - 155
-            c.create_rectangle(8, y0, W-8, H-90, fill="#1c1207", outline="#d29922", tags="ui")
-            c.create_text(W//2, y0+12, text="Approval!", fill="#d29922", font=self.f_sm, tags="ui")
-            hint = p.get("hint", "-")
-            if len(hint) > 26:
-                hint = hint[:24] + ".."
-            c.create_text(W//2, y0+30, text=p.get("tool", "-"), fill="#e6edf3", font=self.f_xs, tags="ui")
-            c.create_text(W//2, y0+44, text=hint, fill="#8b949e", font=self.f_xs, tags="ui")
-            c.create_rectangle(12, H-108, W//2-4, H-90, fill="#238636", tags="btn_approve")
-            c.create_text(W//4+4, H-99, text="Approve", fill="white", font=self.f_xs, tags="btn_approve")
-            c.create_rectangle(W//2+4, H-108, W-12, H-90, fill="#30363d", outline="#484f58", tags="btn_deny")
-            c.create_text(W*3//4-4, H-99, text="Deny", fill="#e6edf3", font=self.f_xs, tags="btn_deny")
-            c.tag_bind("btn_approve", "<Button-1>", lambda e: self._decide("once"))
-            c.tag_bind("btn_deny", "<Button-1>", lambda e: self._decide("deny"))
-
-    def _decide(self, d):
-        pid = self.sd.get("prompt", {}).get("id")
-        if not pid:
+    def _draw_approval(self, cr):
+        p = self.sd.get("prompt")
+        if not p:
             return
-        def post():
-            try:
-                req = urllib.request.Request(
-                    f"http://{CONFIG['host']}:{CONFIG['port']}/api/permission",
-                    data=json.dumps({"id": pid, "decision": d}).encode(),
-                    headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=2)
-            except Exception:
-                pass
-        threading.Thread(target=post, daemon=True).start()
 
-    def _draw_fx(self):
-        c = self.canvas
-        c.delete("fx")
-        for p in self.particles:
-            x, y, life, ch, co = p
-            c.create_text(x, y, text=ch, fill=co, font=("Arial", 10), tags="fx")
+        y0 = H - 155
+        # 弹窗背景
+        cr.set_source_rgba(0.11, 0.07, 0.03, 0.95)  # #1c1207
+        self._rounded_rect(cr, 8, y0, W - 16, 65, 6)
+        cr.fill()
+        # 边框
+        cr.set_source_rgba(0.82, 0.60, 0.13, 1)  # #d29922
+        self._rounded_rect(cr, 8, y0, W - 16, 65, 6)
+        cr.stroke()
 
-    def _tick(self):
-        import math
-        t = time.time()
+        # 标题
+        cr.set_font_size(13)
+        cr.set_source_rgba(0.82, 0.60, 0.13, 1)
+        ext = cr.text_extents("Approval!")
+        cr.move_to(W / 2 - ext.width / 2, y0 + 15)
+        cr.show_text("Approval!")
 
-        # 浮动
-        self.bob = 0
+        # 工具名
+        cr.set_font_size(10)
+        cr.set_source_rgba(0.90, 0.93, 0.95, 1)  # #e6edf3
+        tool_text = p.get("tool", "-")
+        ext = cr.text_extents(tool_text)
+        cr.move_to(W / 2 - ext.width / 2, y0 + 30)
+        cr.show_text(tool_text)
 
-        # 帧动画切换
-        self.frame_idx = int(t * 2) % max(len(v) for v in self.sprite_frames.values()) if self.sprite_frames else 0
+        # 提示
+        hint = p.get("hint", "-")
+        if len(hint) > 26:
+            hint = hint[:24] + ".."
+        cr.set_source_rgba(0.545, 0.580, 0.620, 1)
+        ext = cr.text_extents(hint)
+        cr.move_to(W / 2 - ext.width / 2, y0 + 44)
+        cr.show_text(hint)
 
-        # 粒子效果
-        if self.mode == "celebrate" and __import__("random").random() < 0.3:
-            self.particles.append([__import__("random").uniform(20, W-20), 40, 1.0,
-                                   __import__("random").choice(["*", "+", "~"]),
-                                   __import__("random").choice(["#fdcb6e", "#e17055", "#00cec9"])])
-        if self.mode == "sleep" and __import__("random").random() < 0.08:
-            self.particles.append([W//2 + __import__("random").uniform(-5, 15), 30, 1.0, "z", "#6a6a8a"])
-        if self.mode == "heart" and __import__("random").random() < 0.12:
-            self.particles.append([__import__("random").uniform(30, W-30), 45, 1.0, "<3", "#e84393"])
+        # Approve 按钮
+        self._draw_button(cr, 12, H - 108, W // 2 - 16, 18,
+                          "Approve", (0.137, 0.525, 0.212, 1),  # #238636
+                          (1, 1, 1, 1), "once")
+        # Deny 按钮
+        self._draw_button(cr, W // 2 + 4, H - 108, W // 2 - 16, 18,
+                          "Deny", (0.19, 0.21, 0.24, 1),  # #30363d
+                          (0.90, 0.93, 0.95, 1), "deny")  # #e6edf3
 
-        for p in self.particles:
-            p[1] -= 0.8
-            p[2] -= 0.015
-        self.particles = [p for p in self.particles if p[2] > 0]
+    def _draw_button(self, cr, x, y, w, h, label, bg_color, text_color, decision):
+        cr.set_source_rgba(*bg_color)
+        self._rounded_rect(cr, x, y, w, h, 3)
+        cr.fill()
+        cr.set_font_size(10)
+        cr.set_source_rgba(*text_color)
+        ext = cr.text_extents(label)
+        cr.move_to(x + w / 2 - ext.width / 2, y + h / 2 + ext.height / 2)
+        cr.show_text(label)
 
-        self._draw_pet()
-        self._draw_fx()
-        self._draw_ui()
-        self.root.after(FPS_MS, self._tick)
-
-    def _poll(self):
-        try:
-            r = urllib.request.urlopen(f"http://{CONFIG['host']}:{CONFIG['port']}/api/state", timeout=1)
-            self.sd = json.loads(r.read())
-            self.mode = self.sd.get("mode", "sleep")
-        except Exception:
-            pass
-        self.root.after(500, self._poll)
+    @staticmethod
+    def _rounded_rect(cr, x, y, w, h, r):
+        cr.new_sub_path()
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
 
     def run(self):
-        self.root.mainloop()
+        self.win.show_all()
+        Gtk.main()
 
 
 if __name__ == "__main__":

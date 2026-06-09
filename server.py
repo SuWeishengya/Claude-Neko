@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """
-Claude Desktop Buddy — 桌面版
-基于 CC Switch SQLite 数据库轮询，实时驱动桌面宠物状态
+Claude Desktop Buddy — HTTP 后端
+接收监控数据，维护全局状态，供桌面悬浮窗轮询
 """
 
-import os, sys
-os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-if sys.stdout.encoding != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
 import asyncio
 import json
 import time

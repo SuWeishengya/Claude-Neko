@@ -98,17 +98,17 @@ class BuddyApp:
         # 置顶（X11 下 set_keep_above 有效）
         self.win.set_keep_above(True)
 
-        # 窗口位置：屏幕右上角 + 偏移（多实例错开）
+        # 窗口位置：屏幕右下角 + 偏移（多实例错开，向上堆叠）
         display = Gdk.Display.get_default()
         monitor = display.get_primary_monitor() or display.get_monitor(0)
         geo = monitor.get_geometry()
         offset = args.offset * 30
         x = geo.x + geo.width - W - 20 + offset
-        y = geo.y + 40 + offset
-        # 超出屏幕右边缘则换行
+        y = geo.y + geo.height - H - 20 - offset
+        # 超出屏幕右边缘则换列
         if x + W > geo.x + geo.width:
             x = geo.x + geo.width - W - 20
-            y = geo.y + 40 + (offset % 200)
+            y = geo.y + geo.height - H - 20 - (offset % 200)
         self.win.move(x, y)
 
         # 拖拽支持
@@ -143,6 +143,7 @@ class BuddyApp:
 
         # shutdown 检测
         self._shutdown = False
+        self._poll_fail_count = 0
 
     # ─── 拖拽 ───────────────────────────────────────────────
     def _on_button_press(self, widget, event):
@@ -156,9 +157,12 @@ class BuddyApp:
             try:
                 r = urllib.request.urlopen(f"{API_URL}/api/state", timeout=1)
                 data = json.loads(r.read())
+                self._poll_fail_count = 0
                 GLib.idle_add(self._update_state, data)
             except Exception:
-                pass
+                self._poll_fail_count += 1
+                if self._poll_fail_count >= 4:  # 连续 4 次失败（约 2 秒）认为 server 已死
+                    GLib.idle_add(self._do_exit)
         threading.Thread(target=fetch, daemon=True).start()
         return True
 

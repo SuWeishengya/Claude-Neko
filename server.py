@@ -52,7 +52,9 @@ state = {
 }
 
 # 最后一次收到事件的时间戳（用于心跳超时）
-last_event_time = time.time()
+# 初始化为 inf，等第一个 hook 事件到达后才开始计时
+# 避免 server 启动后、Claude 发出第一个 tool_use 前就被心跳超时杀掉
+last_event_time = float('inf')
 
 # ─── 注册文件管理 ─────────────────────────────────────────────
 
@@ -92,6 +94,9 @@ def heartbeat_checker():
             break
 
 
+shutdown_event = threading.Event()
+httpd_ref = None
+
 def do_shutdown():
     """优雅关闭"""
     global last_event_time
@@ -99,9 +104,10 @@ def do_shutdown():
     remove_registration()
     # 延迟退出，让 buddy_widget 有时间收到 shutdown 信号
     def _exit():
-        time.sleep(2)
-        import os
-        os._exit(0)
+        time.sleep(5)
+        if httpd_ref:
+            httpd_ref.shutdown()  # 停止 serve_forever()
+        shutdown_event.set()
     threading.Thread(target=_exit, daemon=True).start()
 
 # ─── HTTP 服务 ─────────────────────────────────────────────
@@ -235,8 +241,12 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def start_http_server():
-    with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
-        httpd.serve_forever()
+    global httpd_ref
+    class ReusableTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+    httpd = ReusableTCPServer(("127.0.0.1", args.port), Handler)
+    httpd_ref = httpd
+    httpd.serve_forever()
 
 
 def main():
@@ -260,8 +270,8 @@ def main():
 
     # 等待关闭信号
     try:
-        while not state["shutdown"]:
-            time.sleep(1)
+        while not shutdown_event.is_set():
+            shutdown_event.wait(timeout=1)
     except KeyboardInterrupt:
         print("\nBye!")
     finally:

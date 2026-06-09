@@ -95,6 +95,13 @@ cmd_stop() {
     fi
 }
 
+# ─── restart：重启小猫 ────────────────────────────────────
+cmd_restart() {
+    cmd_stop
+    sleep 1
+    cmd_start
+}
+
 # ─── enable：开启自动启动 ──────────────────────────────────
 cmd_enable() {
     bash "$INSTALL_DIR/install.sh"
@@ -182,6 +189,7 @@ cmd_status() {
 case "${1:-help}" in
     start)   cmd_start ;;
     stop)    cmd_stop ;;
+    restart) cmd_restart ;;
     enable)  cmd_enable ;;
     disable) cmd_disable ;;
     status)  cmd_status ;;
@@ -193,6 +201,7 @@ case "${1:-help}" in
         echo "命令:"
         echo "  start    拉起一只小猫"
         echo "  stop     关闭所有小猫"
+        echo "  restart  重启小猫"
         echo "  enable   开启自动随 Claude 启动"
         echo "  disable  关闭自动随 Claude 启动"
         echo "  status   查看状态"

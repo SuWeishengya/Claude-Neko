@@ -22,6 +22,12 @@ if [ -z "$SESSION_ID" ]; then
     exit 1
 fi
 
+# 校验 session_id 格式（只允许字母数字和连字符，防注入）
+if ! echo "$SESSION_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+    echo "Error: Invalid session_id" >&2
+    exit 1
+fi
+
 # 清理残留注册文件（检查 PID 存活）
 for f in "$SESSIONS_DIR"/*.json; do
     [ -f "$f" ] || continue
@@ -44,7 +50,7 @@ if [ -f "$REG_FILE" ]; then
     rm -f "$REG_FILE"
 fi
 
-# 找空闲端口（从 9100 开始）
+# 找空闲端口（从 9100 开始，确保端口未被占用）
 PORT=9100
 for f in "$SESSIONS_DIR"/*.json; do
     [ -f "$f" ] || continue
@@ -53,15 +59,19 @@ for f in "$SESSIONS_DIR"/*.json; do
         PORT=$((P + 1))
     fi
 done
+# 确保端口未被其他进程占用
+while ss -tlnp 2>/dev/null | grep -q ":$PORT "; do
+    PORT=$((PORT + 1))
+done
 
 # 计算窗口偏移（当前活跃小猫数量）
 OFFSET=$(ls -1 "$SESSIONS_DIR"/*.json 2>/dev/null | wc -l)
 
-# 启动 server.py
+# 启动 server.py（重定向 stdin 避免抢占 Claude Code 的终端输入）
 "$PYTHON" "$INSTALL_DIR/server.py" \
     --port "$PORT" \
     --session-id "$SESSION_ID" \
-    --state-dir "$STATE_DIR" &
+    --state-dir "$STATE_DIR" </dev/null &>/dev/null &
 PID_SERVER=$!
 
 # 等待 server 就绪（最多 5 秒）
@@ -79,7 +89,11 @@ if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
 fi
 env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/buddy_widget.py" \
     --port "$PORT" \
-    --offset "$OFFSET" &
+    --offset "$OFFSET" </dev/null &>/dev/null &
 PID_WIDGET=$!
 
-echo "🐾 Cat started: session=$SESSION_ID port=$PORT offset=$OFFSET"
+# 注册文件由 server.py 自动写入（write_registration），无需此处重复写入
+# server.py 会在启动时写入 {session_id, port, pid_server, created_at}
+
+# 输出到 stderr 避免干扰 Claude Code 的 stdin/stdout
+echo "🐾 Cat started: session=$SESSION_ID port=$PORT offset=$OFFSET" >&2

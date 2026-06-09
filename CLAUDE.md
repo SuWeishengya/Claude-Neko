@@ -26,6 +26,7 @@ pip install -r requirements.txt
 # 管理命令
 neko start     # 拉起小猫
 neko stop      # 关闭小猫
+neko restart   # 重启小猫
 neko enable    # 开启自动启动
 neko disable   # 关闭自动启动
 neko status    # 查看状态

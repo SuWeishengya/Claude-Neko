@@ -25,6 +25,7 @@ git clone https://github.com/SuWeishengya/Claude-Neko.git && cd Claude-Neko && b
 ```bash
 neko start     # 手动拉起一只小猫
 neko stop      # 关闭所有小猫
+neko restart   # 重启小猫
 neko enable    # 开启自动随 Claude 启动
 neko disable   # 关闭自动随 Claude 启动
 neko status    # 查看运行状态

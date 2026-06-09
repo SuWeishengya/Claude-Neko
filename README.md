@@ -15,10 +15,7 @@
 ## 快速安装
 
 ```bash
-git clone https://github.com/SuWeishengya/Claude-Neko.git
-cd Claude-Neko
-chmod +x install.sh
-./install.sh
+git clone https://github.com/SuWeishengya/Claude-Neko.git && cd Claude-Neko && bash install.sh
 ```
 
 安装完成后，打开任意 Claude Code 会话，小橘猫自动出现。

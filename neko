@@ -83,8 +83,8 @@ cmd_stop() {
         fi
     done
 
-    # 兜底：杀所有相关进程
-    ps aux | grep -E "server\.py|buddy_widget\.py" | grep -v grep | awk '{print $2}' | xargs -r kill 2>/dev/null && STOPPED=$((STOPPED + 1))
+    # 兜底：杀所有相关进程（限定路径避免误杀）
+    ps aux | grep -E "claude-desktop-pet/(server|buddy_widget)\.py" | grep -v grep | awk '{print $2}' | xargs -r kill 2>/dev/null && STOPPED=$((STOPPED + 1))
 
     rm -f "$SESSIONS_DIR"/*.json
 

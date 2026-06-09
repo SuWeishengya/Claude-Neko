@@ -56,6 +56,9 @@ state = {
 # 避免 server 启动后、Claude 发出第一个 tool_use 前就被心跳超时杀掉
 last_event_time = float('inf')
 
+# 线程锁：保护 state 字典的并发读写
+state_lock = threading.Lock()
+
 # ─── 注册文件管理 ─────────────────────────────────────────────
 
 def write_registration(port):
@@ -86,21 +89,27 @@ def heartbeat_checker():
     global last_event_time
     while True:
         time.sleep(2)
-        if args.session_id and state["shutdown"]:
-            break
-        if args.session_id and (time.time() - last_event_time > 5):
-            print("⏰ 心跳超时，自动关闭")
+        with state_lock:
+            if state["shutdown"]:
+                break
+        if args.session_id and last_event_time != float('inf') and (time.time() - last_event_time > 120):
+            print("⏰ 心跳超时（120 秒无事件），自动关闭")
             do_shutdown()
             break
 
 
 shutdown_event = threading.Event()
 httpd_ref = None
+_shutdown_started = False
 
 def do_shutdown():
-    """优雅关闭"""
-    global last_event_time
-    state["shutdown"] = True
+    """优雅关闭（防重复调用）"""
+    global _shutdown_started
+    if _shutdown_started:
+        return
+    _shutdown_started = True
+    with state_lock:
+        state["shutdown"] = True
     remove_registration()
     # 延迟退出，让 buddy_widget 有时间收到 shutdown 信号
     def _exit():
@@ -119,11 +128,14 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/state":
+            with state_lock:
+                data = json.dumps(state, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
             self.end_headers()
-            self.wfile.write(json.dumps(state, ensure_ascii=False).encode())
+            self.wfile.write(data)
             return
         super().do_GET()
 
@@ -137,6 +149,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
             do_shutdown()
@@ -147,89 +160,97 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(length)) if length else {}
             decision = body.get("decision", "deny")
             prompt_id = body.get("id")
-            if state["prompt"] and state["prompt"]["id"] == prompt_id:
-                if decision == "once":
-                    state["approve_count"] += 1
-                    state["mode"] = "heart"
-                    state["msg"] = "Approved!"
-                else:
-                    state["deny_count"] += 1
-                    state["mode"] = "idle"
-                    state["msg"] = "Denied"
-                state["prompt"] = None
-                state["waiting"] = 0
+            with state_lock:
+                if state["prompt"] and state["prompt"]["id"] == prompt_id:
+                    if decision == "once":
+                        state["approve_count"] += 1
+                        state["mode"] = "heart"
+                        state["msg"] = "Approved!"
+                    else:
+                        state["deny_count"] += 1
+                        state["mode"] = "idle"
+                        state["msg"] = "Denied"
+                    state["prompt"] = None
+                    state["waiting"] = 0
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
             return
 
         if parsed.path == "/api/hook":
+            global last_event_time
             last_event_time = time.time()
             length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except json.JSONDecodeError:
+                self.send_error(400, "Invalid JSON")
+                return
             event = body.get("event", "")
 
-            if event == "pre_tool_use":
-                state["running"] += 1
-                state["mode"] = "busy"
-                state["msg"] = body.get("msg", "")[:40]
-                state["connected"] = True
-                state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
+            # 等级计算表
+            LEVEL_TABLE = [
+                (0,1),(1_000_000,2),(5_000_000,3),(10_000_000,4),
+                (50_000_000,5),(100_000_000,6),(500_000_000,7),
+                (1_000_000_000,8),(5_000_000_000,9),(10_000_000_000,10),
+            ]
 
-            elif event == "post_tool_use":
-                state["running"] = max(0, state["running"] - 1)
-                if state["running"] == 0 and state["waiting"] == 0:
-                    state["mode"] = "idle"
-                    state["msg"] = "Thinking"
-                else:
+            with state_lock:
+                if event == "pre_tool_use":
+                    state["running"] += 1
+                    state["mode"] = "busy"
                     state["msg"] = body.get("msg", "")[:40]
+                    state["connected"] = True
+                    state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
 
-            elif event == "stop":
-                state["running"] = 0
-                state["waiting"] = 0
-                state["mode"] = "idle"
-                state["msg"] = "Ready"
+                elif event == "post_tool_use":
+                    state["running"] = max(0, state["running"] - 1)
+                    if state["running"] == 0 and state["waiting"] == 0:
+                        state["mode"] = "idle"
+                        state["msg"] = "Thinking"
+                    else:
+                        state["msg"] = body.get("msg", "")[:40]
 
-            elif event == "permission_request":
-                state["mode"] = "attention"
-                state["waiting"] = 1
-                state["prompt"] = body.get("prompt")
-                state["msg"] = body.get("msg", "Approval needed")
+                elif event == "stop":
+                    state["running"] = 0
+                    state["waiting"] = 0
+                    state["mode"] = "idle"
+                    state["msg"] = "Ready"
 
-            elif event == "session_end":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": True}).encode())
-                do_shutdown()
-                return
+                elif event == "permission_request":
+                    state["mode"] = "attention"
+                    state["waiting"] = 1
+                    state["prompt"] = body.get("prompt")
+                    state["msg"] = body.get("msg", "Approval needed")
 
-            elif event == "cc_switch_update":
-                state["mode"] = body.get("mode", "idle")
-                state["msg"] = body.get("msg", "")
-                state["tokens_today"] = body.get("tokens_today", state["tokens_today"])
-                state["tokens"] = body.get("tokens", state["tokens"])
-                state["tokens_total"] = body.get("tokens_total", state["tokens_total"])
-                state["total"] = body.get("total", 0)
-                state["running"] = body.get("running", 0)
-                state["connected"] = True
-                state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
-                # 等级计算
-                LEVEL_TABLE = [
-                    (0,1),(1_000_000,2),(5_000_000,3),(10_000_000,4),
-                    (50_000_000,5),(100_000_000,6),(500_000_000,7),
-                    (1_000_000_000,8),(5_000_000_000,9),(10_000_000_000,10),
-                ]
-                for th, lv in LEVEL_TABLE:
-                    if state["tokens_total"] >= th:
-                        state["level"] = lv
+                elif event == "session_end":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"ok": True}).encode())
+                    do_shutdown()
+                    return
+
+                elif event == "cc_switch_update":
+                    # 只允许已知字段，防止注入任意 state
+                    ALLOWED_FIELDS = {"mode", "msg", "tokens_today", "tokens", "tokens_total", "total", "running"}
+                    for key in ALLOWED_FIELDS:
+                        if key in body:
+                            state[key] = body[key]
+                    state["connected"] = True
+                    state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state.get('msg', '')}"] + state["entries"][:9]
+                    for th, lv in LEVEL_TABLE:
+                        if state["tokens_total"] >= th:
+                            state["level"] = lv
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode())
             return
@@ -242,7 +263,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def start_http_server():
     global httpd_ref
-    class ReusableTCPServer(socketserver.TCPServer):
+    class ReusableTCPServer(socketserver.ThreadingTCPServer):
         allow_reuse_address = True
     httpd = ReusableTCPServer(("127.0.0.1", args.port), Handler)
     httpd_ref = httpd

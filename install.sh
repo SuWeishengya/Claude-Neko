@@ -189,13 +189,28 @@ new_hooks = {
     ]
 }
 
-# 合并：每个事件类型追加到现有列表（不覆盖）
+# 先移除已有的 claude-desktop-pet hooks（防止重复追加）
+for event in list(existing_hooks.keys()):
+    new_matchers = []
+    for matcher in existing_hooks[event]:
+        new_hooks_list = []
+        for h in matcher.get("hooks", []):
+            cmd = h.get("command", "")
+            if "claude-desktop-pet" not in cmd:
+                new_hooks_list.append(h)
+        if new_hooks_list:
+            matcher["hooks"] = new_hooks_list
+            new_matchers.append(matcher)
+    if new_matchers:
+        existing_hooks[event] = new_matchers
+    else:
+        del existing_hooks[event]
+
+# 合并新 hooks
 for event, matchers in new_hooks.items():
     if event in existing_hooks:
-        # 追加到现有列表
         existing_hooks[event].extend(matchers)
     else:
-        # 新增事件类型
         existing_hooks[event] = matchers
 
 settings["hooks"] = existing_hooks

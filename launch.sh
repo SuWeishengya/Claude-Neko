@@ -59,8 +59,8 @@ for f in "$SESSIONS_DIR"/*.json; do
         PORT=$((P + 1))
     fi
 done
-# 确保端口未被其他进程占用
-while ss -tlnp 2>/dev/null | grep -q ":$PORT "; do
+# 确保端口未被其他进程占用（精确匹配端口号）
+while ss -tlnp 2>/dev/null | grep -qE ":${PORT}\b"; do
     PORT=$((PORT + 1))
 done
 
@@ -74,9 +74,9 @@ OFFSET=$(ls -1 "$SESSIONS_DIR"/*.json 2>/dev/null | wc -l)
     --state-dir "$STATE_DIR" </dev/null &>/dev/null &
 PID_SERVER=$!
 
-# 等待 server 就绪（最多 5 秒）
+# 等待 server 就绪（最多 5 秒，用 python 替代 curl）
 for i in $(seq 1 10); do
-    if curl -s "http://127.0.0.1:$PORT/api/state" >/dev/null 2>&1; then
+    if "$PYTHON" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$PORT/api/state', timeout=1)" 2>/dev/null; then
         break
     fi
     sleep 0.5

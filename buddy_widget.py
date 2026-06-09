@@ -28,7 +28,10 @@ parser.add_argument("--state-dir", type=str,
                     default=str(Path.home() / ".local" / "state" / "claude-desktop-pet"))
 args = parser.parse_args()
 
-CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
+try:
+    CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
+except (FileNotFoundError, json.JSONDecodeError):
+    CONFIG = {"show_level": False, "show_counts": False}
 ASSETS = Path(__file__).parent / "assets" / "cat"
 
 API_URL = f"http://127.0.0.1:{args.port}"
@@ -201,8 +204,8 @@ class BuddyApp:
     def _tick(self):
         if self._shutdown:
             return False
-        self.frame_idx = int(time.time() * 2) % max(
-            (len(v) for v in self.sprite_frames.values()), default=1)
+        max_frames = max((len(v) for v in self.sprite_frames.values() if v), default=1)
+        self.frame_idx = int(time.time() * 2) % max_frames if max_frames > 0 else 0
 
         # 粒子效果
         if self.mode == "celebrate" and random.random() < 0.3:

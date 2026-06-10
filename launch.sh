@@ -116,5 +116,8 @@ PID_WIDGET=$!
 # 注册文件由 server.py 自动写入（write_registration），无需此处重复写入
 # server.py 会在启动时写入 {session_id, port, pid_server, created_at}
 
+# 正常退出，取消 trap（不杀子进程）
+trap - EXIT
+
 # 输出到 stderr 避免干扰 Claude Code 的 stdin/stdout
 echo "🐾 Cat started: session=$SESSION_ID port=$PORT offset=$OFFSET" >&2

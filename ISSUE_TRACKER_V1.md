@@ -1,105 +1,182 @@
-# Claude Neko — Issue Tracker V1
+# ISSUE TRACKER V1 — Claude Neko 全面审计
 
-> 全面审查日期：2026-06-10
-> 最后更新：2026-06-10（全部修复）
+> 生成日期：2026-06-10
+> 审计范围：server.py, hook_bridge.py, buddy_widget.py, claude_monitor.py, 所有 Shell 脚本
+> 审计维度：安全、代码质量、Shell 脚本、测试覆盖
 
-## 审查统计
+## 统计
 
-| 严重程度 | 数量 | 已修复 |
-|---------|------|--------|
-| 🔴 严重 (Bug/安全) | 5 | 5 ✅ |
-| 🟡 中等 (健壮性) | 8 | 8 ✅ |
-| 🟢 低 (优化/体验) | 4 | 4 ✅ |
-| **总计** | **17** | **17 ✅** |
-
----
-
-## 🔴 严重问题
-
-### V1-01 审批按钮无法点击（buddy_widget.py）— 不适用
-- **描述**: `_draw_approval()` 绘制了按钮但没有点击检测
-- **状态**: ⚠️ 无法在无 GUI 环境下测试，代码层面无点击事件绑定
-- **说明**: GTK3 的 draw 只负责渲染，点击检测需要在 `_on_button_press` 中添加坐标判断
-
-### V1-02 state 字典无线程保护（server.py）— ✅ 已修复
-- **修复**: 添加 `state_lock = threading.Lock()`，所有 state 读写加锁
-
-### V1-03 do_shutdown() 可被重复调用（server.py）— ✅ 已修复
-- **修复**: 添加 `_shutdown_started` 标志位防重入
-
-### V1-04 session_id 路径遍历（hook_bridge.py）— ✅ 已修复
-- **修复**: 添加 `re.match(r'^[a-zA-Z0-9_-]+$', session_id)` 校验
-
-### V1-05 sprite_frames 为空时崩溃（buddy_widget.py）— ✅ 已修复
-- **修复**: `max_frames` 计算添加 `if v` 过滤和 `> 0` 检查
+| 等级 | 数量 | 说明 |
+|------|------|------|
+| 🔴 HIGH | 10 | 安全漏洞、死锁、崩溃 |
+| 🟠 MEDIUM | 15 | 可靠性、资源泄漏、误杀风险 |
+| 🟡 LOW | 12 | 代码质量、可维护性 |
+| **总计** | **37** | |
 
 ---
 
-## 🟡 中等问题
+## 🔴 HIGH — 安全漏洞 / 死锁 / 崩溃
 
-### V1-06 config.json 缺失时崩溃 — ✅ 已修复
-- **修复**: 添加 try/except 回退默认值
+### V1-01 [安全] server.py 继承 SimpleHTTPRequestHandler 导致任意文件读取
+- **文件**: server.py:14, 140
+- **描述**: Handler 继承 SimpleHTTPRequestHandler，/api/state 以外的 GET 请求会暴露 server.py 所在目录的所有文件（config.json、注册文件、pids.txt 等）
+- **修复**: 改为继承 BaseHTTPRequestHandler，未知 GET 路径返回 404
+- **状态**: ⬜ 待修复
 
-### V1-07 心跳超时太短（5 秒）— ✅ 已修复
-- **修复**: 改为 120 秒，且 `last_event_time != float('inf')` 才开始计时
+### V1-02 [死锁] session_end 在 state_lock 内发送 HTTP 响应会死锁
+- **文件**: server.py:230
+- **描述**: session_end 分支在 `with state_lock:` 块内发送 HTTP 响应，然后调用 do_shutdown()，do_shutdown 内部也获取 state_lock。state_lock 不是 RLock，导致死锁
+- **修复**: 将 HTTP 响应发送移到锁外面
+- **状态**: ⬜ 待修复
 
-### V1-08 launch.sh 端口匹配误中 — ✅ 已修复
-- **修复**: `grep -qE ":${PORT}\b"` 精确匹配
+### V1-03 [安全] CORS Access-Control-Allow-Origin: * 配合无认证 API
+- **文件**: server.py:135
+- **描述**: 任意网页可通过 CSRF 读取小猫状态、发送审批决策、触发 shutdown
+- **修复**: 移除 CORS 头或限制 Origin
+- **状态**: ⬜ 待修复
 
-### V1-09 neko stop pkill 范围过大 — ✅ 已修复
-- **修复**: 限定路径 `claude-desktop-pet/(server|buddy_widget)\.py`
+### V1-04 [安全] /api/shutdown 和 /api/permission 无认证
+- **文件**: server.py:147, 159
+- **描述**: 任何能访问 localhost 的进程都可以关停小猫或伪造审批
+- **修复**: 使用一次性 token 或 session_id 验证
+- **状态**: ⬜ 待修复
 
-### V1-10 shutdown_event 和 state["shutdown"] 双重状态 — 保留
-- **说明**: 两者职责不同，`shutdown_event` 用于线程同步，`state["shutdown"]` 用于 API 返回
+### V1-05 [竞态] _shutdown_started 无锁保护
+- **文件**: server.py:103
+- **描述**: 多线程下 do_shutdown 可能被执行两次，remove_registration 重复调用
+- **修复**: 使用 threading.Lock 或 threading.Event
+- **状态**: ⬜ 待修复
 
-### V1-11 cc_switch_update 接受任意字段 — ✅ 已修复
-- **修复**: 添加 `ALLOWED_FIELDS` 白名单
+### V1-06 [崩溃] claude_monitor.py config.json 读取无异常处理
+- **文件**: claude_monitor.py:11
+- **描述**: config.json 不存在或格式错误时直接崩溃
+- **修复**: 添加 try-except 和 fallback 默认值
+- **状态**: ⬜ 待修复
 
-### V1-12 stop.sh pkill 范围过大 — ✅ 已修复
-- **修复**: 限定路径 `claude-desktop-pet/`
+### V1-07 [安全] hook_bridge.py port 值未校验范围
+- **文件**: hook_bridge.py:45
+- **描述**: 注册文件被篡改后可向 localhost 任意端口发送 POST（如 Redis 6379）
+- **修复**: 校验 port 在 9100-9199 范围内
+- **状态**: ⬜ 待修复
 
-### V1-13 hook_bridge.py 静默吞异常 — ✅ 已修复
-- **修复**: 输出到 stderr
+### V1-08 [安全] launch.sh python -c 中嵌入 shell 变量存在命令注入
+- **文件**: launch.sh:34, 45, 57 及 neko 多处
+- **描述**: 文件名含单引号时会破坏 Python 字符串语法
+- **修复**: 通过环境变量传递路径
+- **状态**: ⬜ 待修复
+
+### V1-09 [BUG] launch.sh server 启动失败仍启动 widget，无 trap 清理
+- **文件**: launch.sh:74, 90
+- **描述**: server 不可用时 widget 仍启动；脚本退出时子进程成为孤儿
+- **修复**: 健康检查失败后 exit 1；添加 trap EXIT 清理子进程
+- **状态**: ⬜ 待修复
+
+### V1-10 [BUG] uninstall.sh 缺少 set -e
+- **文件**: uninstall.sh:1
+- **描述**: rm -rf 失败时静默继续，用户以为已卸载但文件残留
+- **修复**: 添加 set -e
+- **状态**: ⬜ 待修复
 
 ---
 
-## 🟢 低优先级
+## 🟠 MEDIUM — 可靠性 / 资源泄漏 / 误杀
 
-### V1-14 start.sh 缺少 session_id — 保留（手动模式设计如此）
+### V1-11 [安全] Content-Length 未限制，内存耗尽风险
+- **文件**: server.py:148, 160, 187
+- **修复**: 添加 Content-Length 上限（1MB）
+- **状态**: ⬜ 待修复
 
-### V1-15 launch.sh 依赖 curl — ✅ 已修复
-- **修复**: 改用 python urllib 检测
+### V1-12 [安全] permission_request 的 prompt 字段未校验结构
+- **文件**: server.py:226
+- **修复**: 校验 prompt 为 dict 且包含 id、tool 字段
+- **状态**: ⬜ 待修复
 
-### V1-16 install.sh hooks 重复追加 — ✅ 已修复
-- **修复**: 先移除旧的 claude-desktop-pet hooks 再添加
+### V1-13 [安全] claude_monitor.py config.json host 字段可被篡改为远程地址
+- **文件**: claude_monitor.py:21
+- **修复**: 硬编码 host 为 127.0.0.1
+- **状态**: ⬜ 待修复
 
-### V1-17 neko status 性能 — 保留（当前规模可接受）
+### V1-14 [BUG] hook_bridge.py 裸 except 吞掉所有异常
+- **文件**: hook_bridge.py:37
+- **修复**: 至少 log 到 stderr
+- **状态**: ⬜ 待修复
+
+### V1-15 [BUG] hook_bridge.py urlopen 返回值未关闭
+- **文件**: hook_bridge.py:49
+- **修复**: 使用 with 语句
+- **状态**: ⬜ 待修复
+
+### V1-16 [BUG] hook_bridge.py stdin.read() 可能读到不完整 JSON
+- **文件**: hook_bridge.py:58
+- **修复**: 检查 JSON 完整性或使用 raw_decode
+- **状态**: ⬜ 待修复
+
+### V1-17 [BUG] ThreadingTCPServer 未设置 daemon_threads
+- **文件**: server.py:266
+- **修复**: 添加 daemon_threads = True
+- **状态**: ⬜ 待修复
+
+### V1-18 [BUG] buddy_widget 粒子列表无上限
+- **文件**: buddy_widget.py:211
+- **修复**: 添加 max 200 个粒子的上限
+- **状态**: ⬜ 待修复
+
+### V1-19 [BUG] buddy_widget 审批按钮无法点击
+- **文件**: buddy_widget.py:188
+- **描述**: 绘制了 Approve/Deny 按钮但 _on_button_press 只处理拖拽
+- **修复**: 添加按钮区域点击检测
+- **状态**: ⬜ 待修复
+
+### V1-20 [BUG] buddy_widget get_primary_monitor() 可能返回 None
+- **文件**: buddy_widget.py:106
+- **修复**: 添加 None 检查和默认值
+- **状态**: ⬜ 待修复
+
+### V1-21 [BUG] claude_monitor 每 3 秒全量扫描所有 jsonl 文件
+- **文件**: claude_monitor.py:59
+- **修复**: 缓存已处理文件的偏移量
+- **状态**: ⬜ 待修复
+
+### V1-22 [BUG] neko start 和 start.sh 不检测系统级端口占用
+- **文件**: neko:47, start.sh:33
+- **修复**: 添加 ss -tlnp 端口检测
+- **状态**: ⬜ 待修复
+
+### V1-23 [BUG] stop.sh 和 start.sh cd 失败未退出
+- **文件**: stop.sh:3, start.sh:3
+- **修复**: cd 失败时 exit 1
+- **状态**: ⬜ 待修复
+
+### V1-24 [安全] pkill -f 模式过于宽泛可能误杀
+- **文件**: stop.sh:22, uninstall.sh:27, neko:87
+- **修复**: 使用更精确的匹配模式
+- **状态**: ⬜ 待修复
+
+### V1-25 [BUG] neko start PID_SERVER 赋值后从未使用
+- **文件**: neko:51
+- **修复**: 健康检查中检测进程是否存活
+- **状态**: ⬜ 待修复
 
 ---
 
-## 额外修复（测试中发现）
+## 🟡 LOW — 代码质量 / 可维护性
 
-### V1-18 TCPServer 单线程导致并发阻塞 — ✅ 已修复
-- **修复**: 改为 `ThreadingTCPServer`
-
-### V1-19 HTTP keep-alive 导致 curl 挂起 — ✅ 已修复
-- **修复**: 添加 `Connection: close` 响应头
-
-### V1-20 畸形 JSON 导致 500 错误 — ✅ 已修复
-- **修复**: 添加 try/except，返回 400
+### V1-26 ~ V1-37（详见上方）
+- 全局变量重复声明、魔术数字、死代码、日志缺失等
+- **状态**: ⬜ 待修复
 
 ---
 
-## 测试覆盖
+## 测试覆盖评估
 
-| 测试阶段 | 测试项 | 结果 |
-|---------|--------|------|
-| Phase 1: 基础 API | 15 项 | ✅ 全部通过 |
-| Phase 2: 安全测试 | 5 项 | ✅ 全部通过 |
-| Phase 3: 并发测试 | 5 项 | ✅ 全部通过 |
-| Phase 4: 等级边界 | 13 项 | ✅ 全部通过 |
-| Phase 5: 注册文件 | 3 项 | ✅ 全部通过 |
-| Phase 6: 多实例隔离 | 3 项 | ✅ 全部通过 |
-| Phase 7: entries 截断 | 1 项 | ✅ 全部通过 |
-| Phase 8: Shell 脚本 | 6 项 | ✅ 全部通过 |
-| **总计** | **52** | **✅ 52/52** |
+| 组件 | 覆盖率 |
+|------|--------|
+| server.py API | 75% |
+| server.py 基础设施 | 40% |
+| hook_bridge.py | 10% |
+| launch.sh | 0% |
+| buddy_widget.py | 0% |
+| claude_monitor.py | 0% |
+| neko 命令 | 5% |
+| install/uninstall.sh | 0% |
+| **总体** | **~25%** |

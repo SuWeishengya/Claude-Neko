@@ -16,7 +16,7 @@ echo "🛑 停止运行中的小猫..."
 if [ -d "$STATE_DIR/sessions" ]; then
     for f in "$STATE_DIR/sessions"/*.json; do
         [ -f "$f" ] || continue
-        PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+        PID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server',0))" 2>/dev/null)
         if [ -n "$PID" ] && [ "$PID" != "0" ]; then
             kill "$PID" 2>/dev/null && echo "  ✅ 停止 server (PID $PID)" || true
         fi

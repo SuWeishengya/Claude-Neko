@@ -31,7 +31,7 @@ fi
 # 清理残留注册文件（检查 PID 存活）
 for f in "$SESSIONS_DIR"/*.json; do
     [ -f "$f" ] || continue
-    PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+    PID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server',0))" 2>/dev/null)
     if [ -n "$PID" ] && [ "$PID" != "0" ]; then
         if ! kill -0 "$PID" 2>/dev/null; then
             rm -f "$f"
@@ -42,7 +42,7 @@ done
 # 检查是否已有该 session 的注册（已在运行）
 REG_FILE="$SESSIONS_DIR/$SESSION_ID.json"
 if [ -f "$REG_FILE" ]; then
-    PID=$(python3 -c "import json; print(json.load(open('$REG_FILE')).get('pid_server',0))" 2>/dev/null)
+    PID=$(F="$REG_FILE" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server',0))" 2>/dev/null)
     if kill -0 "$PID" 2>/dev/null; then
         # 已在运行，无需重复启动
         exit 0
@@ -54,7 +54,7 @@ fi
 PORT=9100
 for f in "$SESSIONS_DIR"/*.json; do
     [ -f "$f" ] || continue
-    P=$(python3 -c "import json; print(json.load(open('$f')).get('port',0))" 2>/dev/null)
+    P=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('port',0))" 2>/dev/null)
     if [ -n "$P" ] && [ "$P" -ge "$PORT" ] 2>/dev/null; then
         PORT=$((P + 1))
     fi

@@ -11,7 +11,7 @@ import argparse
 import threading
 from datetime import datetime
 from pathlib import Path
-from http.server import SimpleHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler
 import socketserver
 import urllib.parse
 
@@ -121,10 +121,7 @@ def do_shutdown():
 
 # ─── HTTP 服务 ─────────────────────────────────────────────
 
-class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(Path(__file__).parent), **kwargs)
-
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/state":
@@ -137,7 +134,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        super().do_GET()
+        self.send_error(404)
 
     def do_POST(self):
         global last_event_time
@@ -227,13 +224,11 @@ class Handler(SimpleHTTPRequestHandler):
                     state["msg"] = body.get("msg", "Approval needed")
 
                 elif event == "session_end":
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"ok": True}).encode())
-                    do_shutdown()
-                    return
+                    # 状态清理在锁内（与 stop 事件一致），HTTP 响应在锁外
+                    state["running"] = 0
+                    state["waiting"] = 0
+                    state["mode"] = "idle"
+                    state["msg"] = "Session ended"
 
                 elif event == "cc_switch_update":
                     # 只允许已知字段，防止注入任意 state
@@ -246,6 +241,18 @@ class Handler(SimpleHTTPRequestHandler):
                     for th, lv in LEVEL_TABLE:
                         if state["tokens_total"] >= th:
                             state["level"] = lv
+
+            # session_end 在锁外处理：do_shutdown 内部也要获取 state_lock，
+            # 如果在锁内调用会导致死锁（state_lock 不是 RLock）
+            if event == "session_end":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True}).encode())
+                do_shutdown()
+                return
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -265,6 +272,7 @@ def start_http_server():
     global httpd_ref
     class ReusableTCPServer(socketserver.ThreadingTCPServer):
         allow_reuse_address = True
+        daemon_threads = True
     httpd = ReusableTCPServer(("127.0.0.1", args.port), Handler)
     httpd_ref = httpd
     httpd.serve_forever()

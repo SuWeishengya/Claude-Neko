@@ -33,8 +33,12 @@ def find_server_port(session_id: str) -> int | None:
                 # 进程已死，清理注册文件
                 reg_file.unlink(missing_ok=True)
                 return None
-        return data.get("port")
-    except Exception:
+        port = data.get("port")
+        if port and 9100 <= port <= 9999:
+            return port
+        return None
+    except Exception as e:
+        print(f"hook_bridge: failed to read registration: {e}", file=sys.stderr)
         return None
 
 

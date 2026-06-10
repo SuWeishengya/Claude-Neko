@@ -8,7 +8,10 @@ import json, time, urllib.request, sys, threading, glob, os
 from pathlib import Path
 from datetime import datetime
 
-CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
+try:
+    CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
+except (FileNotFoundError, json.JSONDecodeError):
+    CONFIG = {"host": "127.0.0.1", "port": 9100}
 CLAUDE_DIR = Path.home() / ".claude"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
 PROJECTS_DIR = CLAUDE_DIR / "projects"

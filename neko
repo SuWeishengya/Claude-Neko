@@ -21,7 +21,7 @@ cmd_start() {
     # 清理残留
     for f in "$SESSIONS_DIR"/*.json; do
         [ -f "$f" ] || continue
-        PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+        PID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server',0))" 2>/dev/null)
         if [ -n "$PID" ] && [ "$PID" != "0" ]; then
             kill -0 "$PID" 2>/dev/null || rm -f "$f"
         fi
@@ -31,7 +31,7 @@ cmd_start() {
     PORT=9100
     for f in "$SESSIONS_DIR"/*.json; do
         [ -f "$f" ] || continue
-        P=$(python3 -c "import json; print(json.load(open('$f')).get('port',0))" 2>/dev/null)
+        P=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('port',0))" 2>/dev/null)
         if [ -n "$P" ] && [ "$P" -ge "$PORT" ] 2>/dev/null; then
             PORT=$((P + 1))
         fi
@@ -73,8 +73,8 @@ cmd_stop() {
     # 通过注册文件关闭
     for f in "$SESSIONS_DIR"/*.json; do
         [ -f "$f" ] || continue
-        local PORT=$(python3 -c "import json; print(json.load(open('$f')).get('port',0))" 2>/dev/null)
-        local PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server',0))" 2>/dev/null)
+        local PORT=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('port',0))" 2>/dev/null)
+        local PID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server',0))" 2>/dev/null)
         if [ -n "$PORT" ] && [ "$PORT" != "0" ]; then
             curl -s -X POST "http://127.0.0.1:$PORT/api/shutdown" >/dev/null 2>&1
         fi
@@ -169,9 +169,9 @@ cmd_status() {
     echo "  运行中的小猫:"
     for f in "$SESSIONS_DIR"/*.json; do
         [ -f "$f" ] || continue
-        local SID=$(python3 -c "import json; print(json.load(open('$f')).get('session_id','?'))" 2>/dev/null)
-        local PORT=$(python3 -c "import json; print(json.load(open('$f')).get('port','?'))" 2>/dev/null)
-        local PID=$(python3 -c "import json; print(json.load(open('$f')).get('pid_server','?'))" 2>/dev/null)
+        local SID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('session_id','?'))" 2>/dev/null)
+        local PORT=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('port','?'))" 2>/dev/null)
+        local PID=$(F="$f" python3 -c "import json,os; print(json.load(open(os.environ['F'])).get('pid_server','?'))" 2>/dev/null)
         if kill -0 "$PID" 2>/dev/null; then
             local MODE=$(curl -s "http://127.0.0.1:$PORT/api/state" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode','?'))" 2>/dev/null)
             echo -e "    ${GREEN}●${NC} $SID (port=$PORT, mode=$MODE)"

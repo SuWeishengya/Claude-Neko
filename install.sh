@@ -60,7 +60,7 @@ if [ "$SCRIPT_DIR" = "$INSTALL_DIR" ]; then
     echo "  已在安装目录，跳过文件复制"
 else
     # 复制文件
-    for f in server.py neko.py hook_bridge.py launch.sh stop.sh neko config.json uninstall.sh; do
+    for f in server.py neko_widget.py hook_bridge.py launch.sh stop.sh neko config.json uninstall.sh; do
         if [ -f "$SCRIPT_DIR/$f" ]; then
             cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
         fi

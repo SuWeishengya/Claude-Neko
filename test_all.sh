@@ -92,7 +92,6 @@ assert_eq "deny_count=1" "1" "$(get_field "$STATE" "deny_count")"
 curl -s -X POST "http://127.0.0.1:$PORT/api/hook" -H "Content-Type: application/json" -d '{"event":"cc_switch_update","mode":"busy","msg":"Test","tokens_today":5000,"tokens_total":2000000,"total":10,"running":2}'
 STATE=$(curl -s "http://127.0.0.1:$PORT/api/state")
 assert_eq "cc_switch mode=busy" "busy" "$(get_field "$STATE" "mode")"
-assert_eq "level=2 (2M tokens)" "2" "$(get_field "$STATE" "level")"
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/unknown")
 assert_eq "未知端点 404" "404" "$HTTP_CODE"
@@ -192,33 +191,7 @@ stop_server
 # ═════════════════════════════════════════
 echo ""
 echo "════════════════════════════════════════"
-echo " Phase 4: 等级边界测试"
-echo "════════════════════════════════════════"
-
-start_server
-
-for tokens in 0 999999 1000000 4999999 5000000 9999999999 10000000000; do
-    curl -s -X POST "http://127.0.0.1:$PORT/api/hook" -H "Content-Type: application/json" -d "{\"event\":\"cc_switch_update\",\"mode\":\"idle\",\"msg\":\"test\",\"tokens_total\":$tokens}"
-done
-STATE=$(curl -s "http://127.0.0.1:$PORT/api/state")
-assert_eq "10B tokens → Lv.10" "10" "$(get_field "$STATE" "level")"
-
-# 测试各级别
-declare -A LEVEL_MAP=( [0]=1 [999999]=1 [1000000]=2 [4999999]=2 [5000000]=3 [10000000]=4 [50000000]=5 [100000000]=6 [500000000]=7 [1000000000]=8 [5000000000]=9 [10000000000]=10 )
-for tokens in "${!LEVEL_MAP[@]}"; do
-    expected="${LEVEL_MAP[$tokens]}"
-    curl -s -X POST "http://127.0.0.1:$PORT/api/hook" -H "Content-Type: application/json" -d "{\"event\":\"cc_switch_update\",\"mode\":\"idle\",\"msg\":\"test\",\"tokens_total\":$tokens}"
-    STATE=$(curl -s "http://127.0.0.1:$PORT/api/state")
-    actual=$(get_field "$STATE" "level")
-    assert_eq "$tokens tokens → Lv.$expected" "$expected" "$actual"
-done
-
-stop_server
-
-# ═════════════════════════════════════════
-echo ""
-echo "════════════════════════════════════════"
-echo " Phase 5: 注册文件测试"
+echo " Phase 4: 注册文件测试"
 echo "════════════════════════════════════════"
 
 start_server "test-reg-123"
@@ -249,7 +222,7 @@ SERVER_PID=""
 # ═════════════════════════════════════════
 echo ""
 echo "════════════════════════════════════════"
-echo " Phase 6: 多实例隔离"
+echo " Phase 5: 多实例隔离"
 echo "════════════════════════════════════════"
 
 PORT_A=19701
@@ -275,7 +248,7 @@ kill -9 $PID_A $PID_B 2>/dev/null || true
 # ═════════════════════════════════════════
 echo ""
 echo "════════════════════════════════════════"
-echo " Phase 7: entries 截断"
+echo " Phase 6: entries 截断"
 echo "════════════════════════════════════════"
 
 start_server
@@ -292,7 +265,7 @@ stop_server
 # ═════════════════════════════════════════
 echo ""
 echo "════════════════════════════════════════"
-echo " Phase 8: Shell 脚本校验"
+echo " Phase 7: Shell 脚本校验"
 echo "════════════════════════════════════════"
 
 echo "--- session_id 格式校验 ---"

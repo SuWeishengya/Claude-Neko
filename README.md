@@ -22,8 +22,6 @@ Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) �
 
 **自动生命周期** — 装好后不用管。打开 Claude Code，小猫自动出现；关闭会话，小猫自动退出。
 
-**等级系统** — 根据历史总 token 消耗量升级，从 Lv.1 到 Lv.10（100 亿 token）。升级时小猫会庆祝。
-
 ## 安装
 
 ```bash
@@ -55,20 +53,6 @@ neko disable   # 关闭自动启动
 
 ## 配置
 
-编辑 `~/.local/share/claude-desktop-pet/config.json`：
-
-```json
-{
-  "show_level": false,
-  "show_counts": false
-}
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `show_level` | false | 小猫下方显示等级和 token 数 |
-| `show_counts` | false | 显示审批/拒绝次数 |
-
 ## 环境要求
 
 | 项目 | 要求 |
@@ -79,16 +63,6 @@ neko disable   # 关闭自动启动
 | 终端 | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) |
 
 > ⚠️ 仅支持 Linux。不支持 macOS / Windows，不支持 Claude Desktop（GUI 版）。
-
-## 等级表
-
-| 等级 | 所需 tokens | 等级 | 所需 tokens |
-|------|------------|------|------------|
-| Lv.1 | 0 | Lv.6 | 1 亿 |
-| Lv.2 | 100 万 | Lv.7 | 5 亿 |
-| Lv.3 | 500 万 | Lv.8 | 10 亿 |
-| Lv.4 | 1000 万 | Lv.9 | 50 亿 |
-| Lv.5 | 5000 万 | Lv.10 | 100 亿 |
 
 ---
 

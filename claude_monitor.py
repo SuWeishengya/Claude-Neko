@@ -106,29 +106,12 @@ def count_tokens_from_sessions():
     }
 
 
-# 等级表
-LEVEL_TABLE = [
-    (0, 1), (1_000_000, 2), (5_000_000, 3), (10_000_000, 4),
-    (50_000_000, 5), (100_000_000, 6), (500_000_000, 7),
-    (1_000_000_000, 8), (5_000_000_000, 9), (10_000_000_000, 10),
-]
-
-
-def calc_level(tokens):
-    level = 1
-    for th, lv in LEVEL_TABLE:
-        if tokens >= th:
-            level = lv
-    return level
-
-
-last_tokens = 0
 last_mode = "idle"
 
 
 def check_and_push():
     """查询数据，构造状态推送"""
-    global last_tokens, last_mode
+    global last_mode
 
     active = get_active_session()
     stats = count_tokens_from_sessions()
@@ -141,14 +124,6 @@ def check_and_push():
         mode = "idle"
         msg = f"Sessions: {stats['session_count']}"
 
-    # 检测是否升级
-    new_level = calc_level(stats["total_tokens"])
-    old_level = calc_level(last_tokens)
-    if new_level > old_level:
-        mode = "celebrate"
-        msg = f"Level Up! Lv.{old_level} → Lv.{new_level}"
-
-    last_tokens = stats["total_tokens"]
     last_mode = mode
 
     state_update = {

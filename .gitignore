@@ -1,6 +1,9 @@
 venv/
 __pycache__/
-pids.txt
 *.pyc
-Project_history.md
-_Project_history.md
+pids.txt
+neko.log
+OPTIMIZATION.md
+SPRITE_GUIDE.md
+PROJECT.md
+SPRITE_ASSETS.md

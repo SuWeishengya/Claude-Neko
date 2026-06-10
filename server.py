@@ -16,13 +16,6 @@ from http.server import BaseHTTPRequestHandler
 import socketserver
 import urllib.parse
 
-# 等级计算表
-LEVEL_TABLE = [
-    (0,1),(1_000_000,2),(5_000_000,3),(10_000_000,4),
-    (50_000_000,5),(100_000_000,6),(500_000_000,7),
-    (1_000_000_000,8),(5_000_000_000,9),(10_000_000_000,10),
-]
-
 # ─── 命令行参数 ─────────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=9100)
@@ -38,7 +31,7 @@ SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── 全局状态 ─────────────────────────────────────────────────
 state = {
-    "mode":          "idle",       # sleep|idle|busy|attention|celebrate|heart|dizzy
+    "mode":          "idle",       # sleep|idle|busy|attention|heart|dizzy
     "total":         0,
     "running":       0,
     "waiting":       0,
@@ -48,10 +41,8 @@ state = {
     "tokens_today":  0,
     "prompt":        None,
     "connected":     False,
-    "level":         1,
     "approve_count": 0,
     "deny_count":    0,
-    "level_up_at":   0,
     "last_update":   0,
     "tokens_total":  0,
     "pet":           {"style": "cat", "color": "#FF9F43"},
@@ -243,9 +234,6 @@ class Handler(BaseHTTPRequestHandler):
                             state[key] = body[key]
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state.get('msg', '')}"] + state["entries"][:9]
-                    for th, lv in LEVEL_TABLE:
-                        if state["tokens_total"] >= th:
-                            state["level"] = lv
 
             # session_end 在锁外处理：do_shutdown 内部也要获取 state_lock，
             # 如果在锁内调用会导致死锁（state_lock 不是 RLock）

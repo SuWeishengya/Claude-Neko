@@ -72,12 +72,12 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 ## 关键文件
 
-- `config.json` — 显示配置（`show_level`、`show_counts`）
-- `assets/cat/{state}/frame_{N}.png` — 精灵图，状态：sleep/idle/busy/attention/celebrate/heart
+- `config.json` — 显示配置（`port`）
+- `assets/cat/{state}/frame_{N}.png` — 精灵图，状态：sleep/idle/busy/attention/heart
 - `neko` — 命令行管理工具
 - `install.sh` / `uninstall.sh` — 一键安装/卸载
 - `start.sh` / `stop.sh` — 手动模式启动/停止
-- `test_all.sh` — 全面测试脚本（52 项）
+- `test_all.sh` — 全面测试脚本（38 项）
 - `pids.txt` — 手动模式进程 PID 文件
 
 ## 安装后文件结构
@@ -101,8 +101,6 @@ mode 值及对应显示文字和图标：
 | busy | {tool_name}: {desc} | attention | pre_tool_use |
 | attention | Approve: {tool} | busy | permission_request |
 | heart | Approved! | heart | approve 操作 |
-
-等级系统基于历史总 token 消耗：Lv.1 (0) 到 Lv.10 (100亿)，升级触发 `celebrate` 状态。
 
 ## 多实例
 

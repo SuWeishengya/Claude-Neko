@@ -31,7 +31,7 @@ args = parser.parse_args()
 try:
     CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
 except (FileNotFoundError, json.JSONDecodeError):
-    CONFIG = {"show_level": False, "show_counts": False}
+    CONFIG = {}
 ASSETS = Path(__file__).parent / "assets" / "cat"
 
 API_URL = f"http://127.0.0.1:{args.port}"
@@ -41,14 +41,11 @@ COLORS = {
     "idle":  (1.00, 0.62, 0.26),    # #FF9F43
     "busy":  (0.88, 0.44, 0.33),    # #e17055
     "attention": (0.99, 0.80, 0.37),# #fdcb6e
-    "celebrate": (0.00, 0.81, 0.79),# #00cec9
     "heart": (0.91, 0.26, 0.58),    # #e84393
-    "angry": (0.88, 0.44, 0.33),    # #e17055
 }
 MSGS = {
     "sleep": "zZz...", "idle": "Ready", "busy": "Working...",
-    "attention": "Approval!", "celebrate": "Level Up!", "heart": "Approved!",
-    "angry": "Hmph!",
+    "attention": "Approval!", "heart": "Approved!",
 }
 
 PET_SIZE = 110
@@ -59,7 +56,7 @@ FPS_MS = 500
 def load_sprites():
     """加载所有状态的精灵图，返回 {state: [cairo.ImageSurface, ...]}"""
     sprites = {}
-    for state in list(COLORS.keys()) + ["normal"]:
+    for state in COLORS:
         folder = ASSETS / state
         if not folder.exists():
             continue
@@ -240,10 +237,6 @@ class BuddyApp:
         self.frame_idx = int(time.time() * 2) % max_frames if max_frames > 0 else 0
 
         # 粒子效果
-        if self.mode == "celebrate" and random.random() < 0.3:
-            self.particles.append([random.uniform(20, W-20), 40, 1.0,
-                                   random.choice(["*", "+", "~"]),
-                                   random.choice(["#fdcb6e", "#e17055", "#00cec9"])])
         if self.mode == "sleep" and random.random() < 0.08:
             self.particles.append([W//2 + random.uniform(-5, 15), 30, 1.0, "z", "#6a6a8a"])
         if self.mode == "heart" and random.random() < 0.12:
@@ -286,9 +279,6 @@ class BuddyApp:
         cx = W / 2
         cy = H / 2 + 8
 
-        if self.mode == "celebrate":
-            cy -= abs(math.sin(time.time() * 5)) * 12
-
         x = cx - PET_SIZE / 2
         y = cy - PET_SIZE / 2
         cr.set_source_surface(surface, x, y)
@@ -324,34 +314,6 @@ class BuddyApp:
         ext = cr.text_extents(msg)
         cr.move_to(W / 2 - ext.width / 2, y)
         cr.show_text(msg)
-        y += 16
-
-        # 等级 + token 数（可选）
-        if CONFIG.get("show_level"):
-            t = sd.get("tokens_total", 0)
-            if t >= 1_000_000_000:
-                ts = f"{t/1_000_000_000:.1f}B"
-            elif t >= 1_000_000:
-                ts = f"{t/1_000_000:.1f}M"
-            elif t >= 1000:
-                ts = f"{t/1000:.1f}K"
-            else:
-                ts = str(t)
-            level_text = f"Lv.{sd.get('level', 1)} {ts}tok"
-            cr.set_font_size(11)
-            cr.set_source_rgba(0.345, 0.647, 1.0, 1)
-            ext = cr.text_extents(level_text)
-            cr.move_to(W / 2 - ext.width / 2, y)
-            cr.show_text(level_text)
-            y += 14
-
-        # 审批/拒绝计数（可选）
-        if CONFIG.get("show_counts"):
-            count_text = f"v{sd.get('approve_count', 0)} x{sd.get('deny_count', 0)}"
-            cr.set_source_rgba(0.545, 0.580, 0.620, 1)
-            ext = cr.text_extents(count_text)
-            cr.move_to(W / 2 - ext.width / 2, y)
-            cr.show_text(count_text)
 
     def _draw_approval(self, cr):
         p = self.sd.get("prompt")

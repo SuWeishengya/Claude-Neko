@@ -84,17 +84,17 @@
 ### V1-11 [安全] Content-Length 未限制，内存耗尽风险
 - **文件**: server.py:148, 160, 187
 - **修复**: 添加 Content-Length 上限（1MB）
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-12 [安全] permission_request 的 prompt 字段未校验结构
 - **文件**: server.py:226
 - **修复**: 校验 prompt 为 dict 且包含 id、tool 字段
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-13 [安全] claude_monitor.py config.json host 字段可被篡改为远程地址
 - **文件**: claude_monitor.py:21
 - **修复**: 硬编码 host 为 127.0.0.1
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-14 [BUG] hook_bridge.py 裸 except 吞掉所有异常
 - **文件**: hook_bridge.py:37
@@ -104,12 +104,12 @@
 ### V1-15 [BUG] hook_bridge.py urlopen 返回值未关闭
 - **文件**: hook_bridge.py:49
 - **修复**: 使用 with 语句
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-16 [BUG] hook_bridge.py stdin.read() 可能读到不完整 JSON
 - **文件**: hook_bridge.py:58
 - **修复**: 检查 JSON 完整性或使用 raw_decode
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-17 [BUG] ThreadingTCPServer 未设置 daemon_threads
 - **文件**: server.py:266
@@ -119,18 +119,18 @@
 ### V1-18 [BUG] buddy_widget 粒子列表无上限
 - **文件**: buddy_widget.py:211
 - **修复**: 添加 max 200 个粒子的上限
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-19 [BUG] buddy_widget 审批按钮无法点击
 - **文件**: buddy_widget.py:188
 - **描述**: 绘制了 Approve/Deny 按钮但 _on_button_press 只处理拖拽
 - **修复**: 添加按钮区域点击检测
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-20 [BUG] buddy_widget get_primary_monitor() 可能返回 None
 - **文件**: buddy_widget.py:106
 - **修复**: 添加 None 检查和默认值
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (467b66c)
 
 ### V1-21 [BUG] claude_monitor 每 3 秒全量扫描所有 jsonl 文件
 - **文件**: claude_monitor.py:59

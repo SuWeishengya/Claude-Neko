@@ -21,13 +21,13 @@
 - **文件**: server.py:14, 140
 - **描述**: Handler 继承 SimpleHTTPRequestHandler，/api/state 以外的 GET 请求会暴露 server.py 所在目录的所有文件（config.json、注册文件、pids.txt 等）
 - **修复**: 改为继承 BaseHTTPRequestHandler，未知 GET 路径返回 404
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-02 [死锁] session_end 在 state_lock 内发送 HTTP 响应会死锁
 - **文件**: server.py:230
 - **描述**: session_end 分支在 `with state_lock:` 块内发送 HTTP 响应，然后调用 do_shutdown()，do_shutdown 内部也获取 state_lock。state_lock 不是 RLock，导致死锁
-- **修复**: 将 HTTP 响应发送移到锁外面
-- **状态**: ⬜ 待修复
+- **修复**: 将 HTTP 响应发送移到锁外面；锁内仅做状态清理
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-03 [安全] CORS Access-Control-Allow-Origin: * 配合无认证 API
 - **文件**: server.py:135
@@ -45,25 +45,25 @@
 - **文件**: server.py:103
 - **描述**: 多线程下 do_shutdown 可能被执行两次，remove_registration 重复调用
 - **修复**: 使用 threading.Lock 或 threading.Event
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-06 [崩溃] claude_monitor.py config.json 读取无异常处理
 - **文件**: claude_monitor.py:11
 - **描述**: config.json 不存在或格式错误时直接崩溃
 - **修复**: 添加 try-except 和 fallback 默认值
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-07 [安全] hook_bridge.py port 值未校验范围
 - **文件**: hook_bridge.py:45
 - **描述**: 注册文件被篡改后可向 localhost 任意端口发送 POST（如 Redis 6379）
-- **修复**: 校验 port 在 9100-9199 范围内
-- **状态**: ⬜ 待修复
+- **修复**: 校验 port 在 9100-9999 范围内
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-08 [安全] launch.sh python -c 中嵌入 shell 变量存在命令注入
 - **文件**: launch.sh:34, 45, 57 及 neko 多处
 - **描述**: 文件名含单引号时会破坏 Python 字符串语法
 - **修复**: 通过环境变量传递路径
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-09 [BUG] launch.sh server 启动失败仍启动 widget，无 trap 清理
 - **文件**: launch.sh:74, 90
@@ -99,7 +99,7 @@
 ### V1-14 [BUG] hook_bridge.py 裸 except 吞掉所有异常
 - **文件**: hook_bridge.py:37
 - **修复**: 至少 log 到 stderr
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-15 [BUG] hook_bridge.py urlopen 返回值未关闭
 - **文件**: hook_bridge.py:49
@@ -114,7 +114,7 @@
 ### V1-17 [BUG] ThreadingTCPServer 未设置 daemon_threads
 - **文件**: server.py:266
 - **修复**: 添加 daemon_threads = True
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复 (847e0bf)
 
 ### V1-18 [BUG] buddy_widget 粒子列表无上限
 - **文件**: buddy_widget.py:211

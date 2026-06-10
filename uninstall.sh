@@ -25,9 +25,9 @@ if [ -d "$STATE_DIR/sessions" ]; then
     done
 fi
 
-# 也杀掉所有相关进程（限定路径避免误杀）
-pkill -f "claude-desktop-pet/buddy_widget.py" 2>/dev/null && echo "  ✅ 停止 buddy_widget" || true
-pkill -f "claude-desktop-pet/server.py" 2>/dev/null && echo "  ✅ 停止 server" || true
+# 也杀掉所有相关进程
+pkill -f "buddy_widget.py" 2>/dev/null && echo "  ✅ 停止 buddy_widget" || true
+pkill -f "server.py.*--port" 2>/dev/null && echo "  ✅ 停止 server" || true
 
 sleep 1
 

@@ -18,9 +18,9 @@ if [ -f pids.txt ]; then
     rm -f pids.txt
 fi
 
-# 也停止 hook 模式启动的进程（限定路径避免误杀）
-pkill -f "claude-desktop-pet/buddy_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
-pkill -f "claude-desktop-pet/server.py" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
+# 也停止 hook 模式启动的进程
+pkill -f "buddy_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
+pkill -f "server.py.*--port" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
 
 if [ "$STOPPED" -gt 0 ]; then
     echo "🐱 小橘猫已停止"

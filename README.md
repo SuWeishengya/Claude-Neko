@@ -94,7 +94,7 @@ neko status    # 查看运行状态
 ### 自动模式（推荐）
 
 ```
-Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + buddy_widget.py
+Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widget.py
 Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py

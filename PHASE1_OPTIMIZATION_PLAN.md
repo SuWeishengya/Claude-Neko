@@ -38,13 +38,13 @@
 
 ### Batch 3: 可靠性改进（V1-18 ~ V1-25）
 **目标**: 修复误杀、GUI 问题、Shell 脚本健壮性
-**预计影响**: buddy_widget.py, claude_monitor.py, neko, stop.sh, start.sh
+**预计影响**: neko_widget.py, claude_monitor.py, neko, stop.sh, start.sh
 
 | Issue | 优先级 | 文件 | 修复内容 |
 |-------|--------|------|---------|
-| V1-18 | MEDIUM | buddy_widget.py | 粒子列表添加上限 |
-| V1-19 | MEDIUM | buddy_widget.py | 审批按钮添加点击检测 |
-| V1-20 | MEDIUM | buddy_widget.py | get_primary_monitor None 检查 |
+| V1-18 | MEDIUM | neko_widget.py | 粒子列表添加上限 |
+| V1-19 | MEDIUM | neko_widget.py | 审批按钮添加点击检测 |
+| V1-20 | MEDIUM | neko_widget.py | get_primary_monitor None 检查 |
 | V1-21 | MEDIUM | claude_monitor.py | 缓存文件偏移量 |
 | V1-22 | MEDIUM | neko, start.sh | 添加 ss 端口检测 |
 | V1-23 | MEDIUM | stop.sh, start.sh | cd 失败时 exit 1 |
@@ -53,7 +53,7 @@
 
 ### Batch 4: 代码质量（V1-26 ~ V1-37）
 **目标**: 清理代码异味、提升可维护性
-**预计影响**: server.py, hook_bridge.py, buddy_widget.py, install.sh, start.sh, stop.sh
+**预计影响**: server.py, hook_bridge.py, neko_widget.py, install.sh, start.sh, stop.sh
 
 | Issue | 优先级 | 文件 | 修复内容 |
 |-------|--------|------|---------|
@@ -62,7 +62,7 @@
 | V1-28 | LOW | server.py | log_message 至少保留 error 级别 |
 | V1-29 | LOW | server.py | 顶部 import os |
 | V1-30 | LOW | hook_bridge.py | 顶部统一 import |
-| V1-31 | LOW | buddy_widget.py | 魔术数字提取为常量 |
+| V1-31 | LOW | neko_widget.py | 魔术数字提取为常量 |
 | V1-32 | LOW | install.sh | 删除 EXISTING 死代码 |
 | V1-33 | LOW | start.sh | stderr 重定向到日志文件 |
 | V1-34 | LOW | install.sh | 安装后检测关键模块 |

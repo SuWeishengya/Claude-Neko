@@ -1,7 +1,7 @@
 # ISSUE TRACKER V1 — Claude Neko 全面审计
 
 > 生成日期：2026-06-10
-> 审计范围：server.py, hook_bridge.py, buddy_widget.py, claude_monitor.py, 所有 Shell 脚本
+> 审计范围：server.py, hook_bridge.py, neko_widget.py, claude_monitor.py, 所有 Shell 脚本
 > 审计维度：安全、代码质量、Shell 脚本、测试覆盖
 
 ## 统计
@@ -116,19 +116,19 @@
 - **修复**: 添加 daemon_threads = True
 - **状态**: ✅ 已修复 (847e0bf)
 
-### V1-18 [BUG] buddy_widget 粒子列表无上限
-- **文件**: buddy_widget.py:211
+### V1-18 [BUG] neko_widget 粒子列表无上限
+- **文件**: neko_widget.py:211
 - **修复**: 添加 max 200 个粒子的上限
 - **状态**: ✅ 已修复 (467b66c)
 
-### V1-19 [BUG] buddy_widget 审批按钮无法点击
-- **文件**: buddy_widget.py:188
+### V1-19 [BUG] neko_widget 审批按钮无法点击
+- **文件**: neko_widget.py:188
 - **描述**: 绘制了 Approve/Deny 按钮但 _on_button_press 只处理拖拽
 - **修复**: 添加按钮区域点击检测
 - **状态**: ✅ 已修复 (467b66c)
 
-### V1-20 [BUG] buddy_widget get_primary_monitor() 可能返回 None
-- **文件**: buddy_widget.py:106
+### V1-20 [BUG] neko_widget get_primary_monitor() 可能返回 None
+- **文件**: neko_widget.py:106
 - **修复**: 添加 None 检查和默认值
 - **状态**: ✅ 已修复 (467b66c)
 
@@ -175,7 +175,7 @@
 | server.py 基础设施 | 40% |
 | hook_bridge.py | 10% |
 | launch.sh | 0% |
-| buddy_widget.py | 0% |
+| neko_widget.py | 0% |
 | claude_monitor.py | 0% |
 | neko 命令 | 5% |
 | install/uninstall.sh | 0% |

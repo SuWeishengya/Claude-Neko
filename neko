@@ -36,6 +36,10 @@ cmd_start() {
             PORT=$((P + 1))
         fi
     done
+    # 确保端口未被其他进程占用
+    while ss -tlnp 2>/dev/null | grep -qE ":${PORT}\b"; do
+        PORT=$((PORT + 1))
+    done
 
     # 窗口偏移
     OFFSET=$(ls -1 "$SESSIONS_DIR"/*.json 2>/dev/null | wc -l)
@@ -50,11 +54,25 @@ cmd_start() {
         --state-dir "$STATE_DIR" &
     local PID_SERVER=$!
 
-    # 等待就绪
+    # 等待就绪（最多 5 秒）
+    local SERVER_READY=false
     for i in $(seq 1 10); do
-        curl -s "http://127.0.0.1:$PORT/api/state" >/dev/null 2>&1 && break
+        if curl -s "http://127.0.0.1:$PORT/api/state" >/dev/null 2>&1; then
+            SERVER_READY=true
+            break
+        fi
+        # 检查 server 进程是否还活着
+        if ! kill -0 "$PID_SERVER" 2>/dev/null; then
+            echo -e "${RED}❌ server.py 启动失败${NC}"
+            return 1
+        fi
         sleep 0.5
     done
+    if [ "$SERVER_READY" != "true" ]; then
+        echo -e "${RED}❌ server.py 未就绪（超时 5 秒）${NC}"
+        kill "$PID_SERVER" 2>/dev/null || true
+        return 1
+    fi
 
     # 启动 buddy_widget
     local BUDDY_ENV=""

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Neko — 手动启动脚本（不绑定 Claude 会话）
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 PYTHON="./venv/bin/python"
 
@@ -13,7 +13,7 @@ fi
 # 停止旧进程
 if [ -f pids.txt ]; then
     echo "🔄 停止旧进程..."
-    while read pid; do
+    while read -r pid; do
         kill "$pid" 2>/dev/null
     done < pids.txt
     rm -f pids.txt
@@ -29,8 +29,15 @@ if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     echo "  ℹ️  GNOME Wayland 检测到，使用 XWayland 后端"
 fi
 
+# 检查端口是否被占用
+PORT=9100
+if ss -tlnp 2>/dev/null | grep -qE ":${PORT}\b"; then
+    echo "❌ 端口 $PORT 已被占用，请先停止冲突进程"
+    exit 1
+fi
+
 # 启动 server（无 session_id，不自动退出）
-$PYTHON server.py --port 9100 &>/dev/null &
+$PYTHON server.py --port $PORT &>/dev/null &
 pid=$!
 echo "  ✅ server.py (PID $pid)"
 echo "$pid" >> pids.txt

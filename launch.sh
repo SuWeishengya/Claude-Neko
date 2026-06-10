@@ -10,6 +10,16 @@ STATE_DIR="$HOME/.local/state/claude-desktop-pet"
 SESSIONS_DIR="$STATE_DIR/sessions"
 PYTHON="$INSTALL_DIR/venv/bin/python"
 
+# 子进程 PID，trap EXIT 时清理
+PID_SERVER=""
+PID_WIDGET=""
+
+cleanup() {
+    [ -n "$PID_SERVER" ] && kill "$PID_SERVER" 2>/dev/null || true
+    [ -n "$PID_WIDGET" ] && kill "$PID_WIDGET" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # 创建运行时目录
 mkdir -p "$SESSIONS_DIR"
 
@@ -23,7 +33,7 @@ if [ -z "$SESSION_ID" ]; then
 fi
 
 # 校验 session_id 格式（只允许字母数字和连字符，防注入）
-if ! echo "$SESSION_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+if [[ ! "$SESSION_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "Error: Invalid session_id" >&2
     exit 1
 fi
@@ -75,12 +85,23 @@ OFFSET=$(ls -1 "$SESSIONS_DIR"/*.json 2>/dev/null | wc -l)
 PID_SERVER=$!
 
 # 等待 server 就绪（最多 5 秒，用 python 替代 curl）
+SERVER_READY=false
 for i in $(seq 1 10); do
     if "$PYTHON" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$PORT/api/state', timeout=1)" 2>/dev/null; then
+        SERVER_READY=true
         break
+    fi
+    # 检查 server 进程是否还活着
+    if ! kill -0 "$PID_SERVER" 2>/dev/null; then
+        echo "Error: server.py exited prematurely" >&2
+        exit 1
     fi
     sleep 0.5
 done
+if [ "$SERVER_READY" != "true" ]; then
+    echo "Error: server.py failed to start within 5 seconds" >&2
+    exit 1
+fi
 
 # 启动 buddy_widget.py（GNOME Wayland 下强制 XWayland 以支持置顶）
 BUDDY_ENV=""

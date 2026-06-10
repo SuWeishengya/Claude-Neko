@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Neko — 停止脚本（手动模式 + hook 模式）
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 echo "🛑 停止 Claude Neko..."
 
@@ -8,7 +8,7 @@ STOPPED=0
 
 # 停止 pids.txt 中记录的进程（手动模式）
 if [ -f pids.txt ]; then
-    while read pid; do
+    while read -r pid; do
         if kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null
             echo "  ✅ 已停止 PID $pid"

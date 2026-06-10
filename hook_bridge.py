@@ -5,6 +5,8 @@ Claude Code Hook → Desktop Neko 桥接
 """
 
 import json
+import os
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -15,7 +17,6 @@ SESSIONS_DIR = STATE_DIR / "sessions"
 
 def find_server_port(session_id: str) -> int | None:
     """从注册表查找 session 对应的 server 端口"""
-    import re
     if not session_id or not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
         return None
     reg_file = SESSIONS_DIR / f"{session_id}.json"
@@ -24,7 +25,6 @@ def find_server_port(session_id: str) -> int | None:
     try:
         data = json.loads(reg_file.read_text())
         # 检查 server 进程是否还活着
-        import os
         pid = data.get("pid_server")
         if pid:
             try:
@@ -53,7 +53,6 @@ def post_to_server(port: int, endpoint: str, data: dict):
         with urllib.request.urlopen(req, timeout=2):
             pass
     except Exception as e:
-        import sys
         print(f"hook_bridge: {endpoint} failed: {e}", file=sys.stderr)
 
 

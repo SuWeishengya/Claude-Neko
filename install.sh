@@ -33,6 +33,11 @@ install_system_deps() {
 
 install_system_deps
 
+# 验证关键依赖是否可用
+if ! python3 -c "import gi; gi.require_version('Gtk', '3.0')" 2>/dev/null; then
+    echo "  ⚠️  GTK3 绑定未安装成功，请手动安装: python3-gobject gtk3"
+fi
+
 # ─── 2. 创建 venv ─────────────────────────────────────────
 echo ""
 echo "🐍 创建 Python 虚拟环境..."
@@ -80,13 +85,6 @@ echo "⚙️  配置 Claude Code hooks..."
 
 SETTINGS_FILE="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$SETTINGS_FILE")"
-
-# 读取现有配置（保留其他设置）
-if [ -f "$SETTINGS_FILE" ]; then
-    EXISTING=$(cat "$SETTINGS_FILE")
-else
-    EXISTING="{}"
-fi
 
 # 用 python3 合并 hooks 配置（保留用户现有 hooks，追加而非覆盖）
 python3 << 'PYEOF'

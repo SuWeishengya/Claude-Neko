@@ -6,6 +6,7 @@ Claude Neko — HTTP 后端
 """
 
 import json
+import os
 import time
 import argparse
 import threading
@@ -14,6 +15,13 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 import socketserver
 import urllib.parse
+
+# 等级计算表
+LEVEL_TABLE = [
+    (0,1),(1_000_000,2),(5_000_000,3),(10_000_000,4),
+    (50_000_000,5),(100_000_000,6),(500_000_000,7),
+    (1_000_000_000,8),(5_000_000_000,9),(10_000_000_000,10),
+]
 
 # ─── 命令行参数 ─────────────────────────────────────────────
 parser = argparse.ArgumentParser()
@@ -69,7 +77,7 @@ def write_registration(port):
     reg_data = {
         "session_id": args.session_id,
         "port": port,
-        "pid_server": __import__('os').getpid(),
+        "pid_server": os.getpid(),
         "created_at": datetime.now().isoformat(),
     }
     reg_file.write_text(json.dumps(reg_data, ensure_ascii=False, indent=2))
@@ -181,7 +189,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/hook":
-            global last_event_time
             last_event_time = time.time()
             try:
                 body = json.loads(self.rfile.read(length)) if length else {}
@@ -189,13 +196,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(400, "Invalid JSON")
                 return
             event = body.get("event", "")
-
-            # 等级计算表
-            LEVEL_TABLE = [
-                (0,1),(1_000_000,2),(5_000_000,3),(10_000_000,4),
-                (50_000_000,5),(100_000_000,6),(500_000_000,7),
-                (1_000_000_000,8),(5_000_000_000,9),(10_000_000_000,10),
-            ]
 
             with state_lock:
                 if event == "pre_tool_use":
@@ -270,7 +270,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def log_message(self, format, *args):
-        pass  # 静默日志
+        # 只记录错误级别的日志，静默常规请求
+        pass
 
 
 def start_http_server():

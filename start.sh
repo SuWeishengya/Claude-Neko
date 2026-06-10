@@ -37,21 +37,21 @@ if ss -tlnp 2>/dev/null | grep -qE ":${PORT}\b"; then
 fi
 
 # 启动 server（无 session_id，不自动退出）
-$PYTHON server.py --port $PORT &>/dev/null &
+$PYTHON server.py --port $PORT >>neko.log 2>&1 &
 pid=$!
 echo "  ✅ server.py (PID $pid)"
 echo "$pid" >> pids.txt
 sleep 1
 
 # 启动 monitor（手动模式保留轮询）
-$PYTHON claude_monitor.py &>/dev/null &
+$PYTHON claude_monitor.py >>neko.log 2>&1 &
 pid=$!
 echo "  ✅ claude_monitor.py (PID $pid)"
 echo "$pid" >> pids.txt
 sleep 1
 
 # 启动 buddy_widget
-env $BUDDY_ENV $PYTHON buddy_widget.py --port 9100 --offset 0 &>/dev/null &
+env $BUDDY_ENV $PYTHON buddy_widget.py --port 9100 --offset 0 >>neko.log 2>&1 &
 pid=$!
 echo "  ✅ buddy_widget.py (PID $pid)"
 echo "$pid" >> pids.txt

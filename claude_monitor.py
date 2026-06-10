@@ -20,8 +20,9 @@ POLL_INTERVAL = 3  # 轮询间隔（秒）
 
 def post(data):
     try:
+        # 硬编码 host 为 127.0.0.1，防止 config.json 被篡改导致数据外泄
         req = urllib.request.Request(
-            f"http://{CONFIG['host']}:{CONFIG['port']}/api/hook",
+            f"http://127.0.0.1:{CONFIG['port']}/api/hook",
             data=json.dumps(data).encode(),
             headers={"Content-Type": "application/json"},
         )

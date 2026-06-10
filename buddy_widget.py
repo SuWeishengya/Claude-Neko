@@ -104,6 +104,10 @@ class BuddyApp:
         # 窗口位置：屏幕右下角 + 偏移（多实例错开，向上堆叠）
         display = Gdk.Display.get_default()
         monitor = display.get_primary_monitor() or display.get_monitor(0)
+        if not monitor:
+            # 极端情况：无显示器，使用默认窗口位置
+            self.win.move(100, 100)
+            return
         geo = monitor.get_geometry()
         offset = args.offset * 30
         x = geo.x + geo.width - W - 20 + offset
@@ -148,11 +152,39 @@ class BuddyApp:
         self._shutdown = False
         self._poll_fail_count = 0
 
-    # ─── 拖拽 ───────────────────────────────────────────────
+    # ─── 点击/拖拽 ──────────────────────────────────────────
     def _on_button_press(self, widget, event):
         if event.button == 1:
+            # 先检查是否点击了审批按钮
+            if self._check_approval_click(event.x, event.y):
+                return True
             self.win.begin_move_drag(int(event.button), int(event.x_root), int(event.y_root), event.time)
         return True
+
+    def _check_approval_click(self, x, y):
+        """检查点击是否在审批按钮区域内"""
+        p = self.sd.get("prompt")
+        if not p:
+            return False
+        pet_top = H // 2 + 8 - PET_SIZE // 2
+        box_h = 52
+        box_w = PET_SIZE + 16
+        box_x = (W - box_w) // 2 + 4
+        y0 = pet_top - box_h - 8
+        btn_y = y0 + box_h - 20
+        btn_h = 14
+        gap = 6
+        btn_w = (box_w - gap * 3) // 2
+        btn_left_x = box_x + gap
+        btn_right_x = box_x + gap * 2 + btn_w
+
+        if btn_left_x <= x <= btn_left_x + btn_w and btn_y <= y <= btn_y + btn_h:
+            self._decide("once")
+            return True
+        if btn_right_x <= x <= btn_right_x + btn_w and btn_y <= y <= btn_y + btn_h:
+            self._decide("deny")
+            return True
+        return False
 
     # ─── 状态轮询 ───────────────────────────────────────────
     def _poll(self):
@@ -221,6 +253,9 @@ class BuddyApp:
             p[1] -= 0.8
             p[2] -= 0.015
         self.particles = [p for p in self.particles if p[2] > 0]
+        # 限制粒子数量，防止长期运行内存增长
+        if len(self.particles) > 200:
+            self.particles = self.particles[-200:]
 
         self.win.queue_draw()
         return True

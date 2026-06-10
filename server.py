@@ -138,10 +138,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global last_event_time
+        # Content-Length 上限检查（1MB），防止内存耗尽攻击
+        length = int(self.headers.get("Content-Length", 0))
+        if length > 1_000_000:
+            self.send_error(413, "Request too large")
+            return
         parsed = urllib.parse.urlparse(self.path)
 
         if parsed.path == "/api/shutdown":
-            length = int(self.headers.get("Content-Length", 0))
             self.rfile.read(length) if length else None
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -153,7 +157,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/permission":
-            length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             decision = body.get("decision", "deny")
             prompt_id = body.get("id")
@@ -180,7 +183,6 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/hook":
             global last_event_time
             last_event_time = time.time()
-            length = int(self.headers.get("Content-Length", 0))
             try:
                 body = json.loads(self.rfile.read(length)) if length else {}
             except json.JSONDecodeError:
@@ -218,10 +220,13 @@ class Handler(BaseHTTPRequestHandler):
                     state["msg"] = "Ready"
 
                 elif event == "permission_request":
-                    state["mode"] = "attention"
-                    state["waiting"] = 1
-                    state["prompt"] = body.get("prompt")
-                    state["msg"] = body.get("msg", "Approval needed")
+                    prompt = body.get("prompt")
+                    # 校验 prompt 结构，防止注入恶意数据
+                    if isinstance(prompt, dict) and "id" in prompt:
+                        state["mode"] = "attention"
+                        state["waiting"] = 1
+                        state["prompt"] = prompt
+                        state["msg"] = body.get("msg", "Approval needed")
 
                 elif event == "session_end":
                     # 状态清理在锁内（与 stop 事件一致），HTTP 响应在锁外

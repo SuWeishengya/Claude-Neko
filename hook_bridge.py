@@ -50,17 +50,22 @@ def post_to_server(port: int, endpoint: str, data: dict):
             data=json.dumps(data).encode(),
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=2)
+        with urllib.request.urlopen(req, timeout=2):
+            pass
     except Exception as e:
         import sys
         print(f"hook_bridge: {endpoint} failed: {e}", file=sys.stderr)
 
 
 def main():
-    # 读取 stdin
+    # 读取 stdin（限制 1MB 防止异常大的输入）
     try:
-        raw = sys.stdin.read()
+        raw = sys.stdin.read(1024 * 1024)
         if not raw:
+            return
+        # 检查 JSON 基本完整性（以 } 结尾）
+        raw = raw.strip()
+        if not raw.endswith('}'):
             return
         event_data = json.loads(raw)
     except Exception:

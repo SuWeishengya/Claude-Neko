@@ -50,10 +50,10 @@ echo "  ✅ claude_monitor.py (PID $pid)"
 echo "$pid" >> pids.txt
 sleep 1
 
-# 启动 buddy_widget
-env $BUDDY_ENV $PYTHON buddy_widget.py --port 9100 --offset 0 >>neko.log 2>&1 &
+# 启动 neko_widget
+env $BUDDY_ENV $PYTHON neko_widget.py --port 9100 --offset 0 >>neko.log 2>&1 &
 pid=$!
-echo "  ✅ buddy_widget.py (PID $pid)"
+echo "  ✅ neko_widget.py (PID $pid)"
 echo "$pid" >> pids.txt
 
 echo ""

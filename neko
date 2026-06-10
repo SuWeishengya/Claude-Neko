@@ -74,10 +74,10 @@ cmd_start() {
         return 1
     fi
 
-    # 启动 buddy_widget
+    # 启动 neko_widget
     local BUDDY_ENV=""
     [ "$XDG_SESSION_TYPE" = "wayland" ] && BUDDY_ENV="GDK_BACKEND=x11"
-    env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/buddy_widget.py" \
+    env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/neko_widget.py" \
         --port "$PORT" \
         --offset "$OFFSET" &
 
@@ -102,7 +102,7 @@ cmd_stop() {
     done
 
     # 兜底：杀所有相关进程
-    pkill -f "buddy_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1))
+    pkill -f "neko_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1))
     pkill -f "server.py.*--port" 2>/dev/null && STOPPED=$((STOPPED + 1))
 
     rm -f "$SESSIONS_DIR"/*.json

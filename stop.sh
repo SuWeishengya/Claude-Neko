@@ -19,7 +19,7 @@ if [ -f pids.txt ]; then
 fi
 
 # 也停止 hook 模式启动的进程
-pkill -f "buddy_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
+pkill -f "neko_widget.py" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
 pkill -f "server.py.*--port" 2>/dev/null && STOPPED=$((STOPPED + 1)) || true
 
 if [ "$STOPPED" -gt 0 ]; then

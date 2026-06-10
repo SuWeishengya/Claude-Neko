@@ -119,7 +119,7 @@ def do_shutdown():
     with state_lock:
         state["shutdown"] = True
     remove_registration()
-    # 延迟退出，让 buddy_widget 有时间收到 shutdown 信号
+    # 延迟退出，让 neko_widget 有时间收到 shutdown 信号
     def _exit():
         time.sleep(5)
         if httpd_ref:

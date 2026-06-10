@@ -1,7 +1,7 @@
 #!/bin/bash
 # Claude Neko — SessionStart 启动脚本
 # 由 Claude Code SessionStart hook 调用
-# 从 stdin 读取 session_id，启动 server + buddy_widget
+# 从 stdin 读取 session_id，启动 server + neko
 
 set -e
 
@@ -103,12 +103,12 @@ if [ "$SERVER_READY" != "true" ]; then
     exit 1
 fi
 
-# 启动 buddy_widget.py（GNOME Wayland 下强制 XWayland 以支持置顶）
+# 启动 neko.py（GNOME Wayland 下强制 XWayland 以支持置顶）
 BUDDY_ENV=""
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     BUDDY_ENV="GDK_BACKEND=x11"
 fi
-env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/buddy_widget.py" \
+env $BUDDY_ENV "$PYTHON" "$INSTALL_DIR/neko_widget.py" \
     --port "$PORT" \
     --offset "$OFFSET" </dev/null &>/dev/null &
 PID_WIDGET=$!

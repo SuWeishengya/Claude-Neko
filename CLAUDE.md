@@ -39,7 +39,7 @@ neko status    # 查看状态
 ### 自动模式（hook 驱动）
 
 ```
-Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + buddy_widget.py
+Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widget.py
 Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py
@@ -53,7 +53,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
   (轮询 ~/.claude/sessions)        │
                                    │  HTTP 轮询
                                    ▼
-                           buddy_widget.py (GTK3 + Cairo)
+                           neko_widget.py (GTK3 + Cairo)
 ```
 
 **server.py** — HTTP 后端（`ThreadingTCPServer`），端口 9100+（动态分配）。关键端点：
@@ -66,7 +66,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 **launch.sh** — SessionStart hook 调用。清理残留、找空闲端口、启动 server + widget、写注册文件。
 
-**buddy_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 500ms 渲染帧动画 + 轮询状态。支持拖拽、粒子效果、审批弹窗。
+**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 500ms 渲染帧动画 + 轮询状态。支持拖拽、粒子效果、审批弹窗。
 
 **claude_monitor.py** — 仅手动模式使用。每 3 秒扫描 `~/.claude/projects/` 下的 session jsonl 文件。
 

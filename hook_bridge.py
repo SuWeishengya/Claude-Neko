@@ -15,7 +15,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "claude-desktop-pet"
 SESSIONS_DIR = STATE_DIR / "sessions"
 
 
-def find_server_port(session_id: str) -> int | None:
+def find_server_port(session_id: str) -> "int | None":
     """从注册表查找 session 对应的 server 端口"""
     if not session_id or not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
         return None

@@ -253,7 +253,18 @@ class Handler(BaseHTTPRequestHandler):
             event = body.get("event", "")
 
             with state_lock:
-                if event in ("session_start", "user_prompt_submit"):
+                if event == "session_start":
+                    # 会话开始，等待用户输入
+                    last_stop_time = float('inf')
+                    state["running"] = 0
+                    state["waiting"] = 0
+                    state["mode"] = "idle"
+                    state["msg"] = "Ready"
+                    state["connected"] = True
+                    state["entries"] = [f"{datetime.now().strftime('%H:%M')} Session started"] + state["entries"][:9]
+
+                elif event == "user_prompt_submit":
+                    # 用户提交问题，开始思考
                     last_stop_time = float('inf')
                     state["running"] = 0
                     state["waiting"] = 0

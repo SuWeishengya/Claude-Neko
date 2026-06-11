@@ -103,12 +103,12 @@ if [ "$SERVER_READY" != "true" ]; then
     exit 1
 fi
 
-# 发送 session_start 事件 → 小猫进入 think 状态
+# 发送 session_start 事件 → 小猫进入 idle 状态（等待用户输入）
 "$PYTHON" -c "
 import urllib.request, json
 urllib.request.urlopen(urllib.request.Request(
     'http://127.0.0.1:$PORT/api/hook',
-    data=json.dumps({'event':'session_start','msg':'Thinking...'}).encode(),
+    data=json.dumps({'event':'session_start','msg':'Ready'}).encode(),
     headers={'Content-Type':'application/json'}
 ), timeout=2)
 " 2>/dev/null || true

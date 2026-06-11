@@ -70,10 +70,64 @@ W = PET_SIZE + PAD_SIDE * 2
 H = PAD_TOP + PET_SIZE + PAD_BOT
 FPS_MS = 125
 
+# 多实例颜色方案（固定顺序循环）
+# 每个颜色是一个 (色相偏移, 饱和度系数, 亮度系数) 的元组
+COLOR_SCHEMES = [
+    {"name": "orange",  "hue_shift": 0,    "sat_mult": 1.0, "light_mult": 1.0},   # 原色橘猫
+    {"name": "blue",    "hue_shift": 0.6,  "sat_mult": 0.8, "light_mult": 0.9},   # 蓝猫
+    {"name": "pink",    "hue_shift": 0.9,  "sat_mult": 0.6, "light_mult": 1.1},   # 粉猫
+    {"name": "gray",    "hue_shift": 0,    "sat_mult": 0.1, "light_mult": 0.9},   # 灰猫
+    {"name": "black",   "hue_shift": 0,    "sat_mult": 0.2, "light_mult": 0.5},   # 黑猫
+    {"name": "white",   "hue_shift": 0,    "sat_mult": 0.1, "light_mult": 1.4},   # 白猫
+]
 
-def load_sprites():
+
+def apply_color_scheme(img_array, scheme):
+    """对 RGBA 图像数组应用颜色方案（向量化 HSL 调整）"""
+    from colorsys import rgb_to_hls, hls_to_rgb
+
+    arr = img_array.copy().astype(np.float32) / 255.0
+    alpha = arr[:, :, 3]
+
+    # 只处理非透明像素
+    mask = alpha > 0.01
+    if not mask.any():
+        return img_array
+
+    # 提取 RGB 通道
+    r = arr[:, :, 0][mask]
+    g = arr[:, :, 1][mask]
+    b = arr[:, :, 2][mask]
+
+    # 批量 RGB -> HLS（逐像素，但只处理非透明像素）
+    pixels = np.stack([r, g, b], axis=1)
+    hls_pixels = np.zeros_like(pixels)
+
+    for idx in range(len(pixels)):
+        h_val, l_val, s_val = rgb_to_hls(*pixels[idx])
+        h_val = (h_val + scheme["hue_shift"]) % 1.0
+        s_val = min(1.0, s_val * scheme["sat_mult"])
+        l_val = min(1.0, l_val * scheme["light_mult"])
+        hls_pixels[idx] = [h_val, l_val, s_val]
+
+    # 批量 HLS -> RGB
+    for idx in range(len(hls_pixels)):
+        r_out, g_out, b_out = hls_to_rgb(*hls_pixels[idx])
+        pixels[idx] = [r_out, g_out, b_out]
+
+    # 写回
+    arr[:, :, 0][mask] = pixels[:, 0]
+    arr[:, :, 1][mask] = pixels[:, 1]
+    arr[:, :, 2][mask] = pixels[:, 2]
+
+    return (arr * 255).astype(np.uint8)
+
+
+def load_sprites(color_index=0):
     """加载所有状态的精灵图，返回 {state: [cairo.ImageSurface, ...]}"""
     sprites = {}
+    scheme = COLOR_SCHEMES[color_index % len(COLOR_SCHEMES)]
+
     for state in COLORS:
         folder = ASSETS / state
         if not folder.exists():
@@ -84,6 +138,11 @@ def load_sprites():
             if not f.exists():
                 break
             img = Image.open(f).convert("RGBA").resize((PET_SIZE, PET_SIZE), Image.LANCZOS)
+            # 应用颜色方案
+            if color_index > 0:  # 第一只（index=0）保持原色
+                arr = np.array(img, dtype=np.uint8)
+                arr = apply_color_scheme(arr, scheme)
+                img = Image.fromarray(arr, "RGBA")
             # Cairo FORMAT_ARGB32 需要预乘 alpha（premultiplied alpha）
             # PIL 是直通 alpha，必须先转换，否则半透明边缘会渲染出白边
             arr = np.array(img, dtype=np.uint8)
@@ -129,13 +188,14 @@ class BuddyApp:
             self.win.move(100, 100)
             return
         geo = monitor.get_geometry()
-        offset = args.offset * 30
-        x = geo.x + geo.width - W - 20 + offset
-        y = geo.y + geo.height - H - 20 - offset
-        # 超出屏幕右边缘则换列
-        if x + W > geo.x + geo.width:
+        # 偏移量：每只小猫完全不遮挡前一只（PET_SIZE + 间距）
+        offset = args.offset * (PET_SIZE + 20)
+        x = geo.x + geo.width - W - 20 - offset
+        y = geo.y + geo.height - H - 20
+        # 超出屏幕左边缘则换行（向上堆叠）
+        if x < geo.x:
             x = geo.x + geo.width - W - 20
-            y = geo.y + geo.height - H - 20 - (offset % 200)
+            y = geo.y + geo.height - H - 20 - (args.offset * 30)
         self.win.move(x, y)
 
         # 拖拽支持
@@ -151,11 +211,12 @@ class BuddyApp:
         self.mode = "idle"
         self.frame_idx = 0
         self.idle_cycle_start = time.time()  # idle 眨眼计时
+        self.think_cycle_start = time.time()  # think 动画计时
         self.particles = []
         self.sd = {}
 
-        # 加载精灵图
-        self.sprite_frames = load_sprites()
+        # 加载精灵图（根据 offset 选择颜色方案）
+        self.sprite_frames = load_sprites(color_index=args.offset)
         # 为缺失的状态准备 fallback
         fallback = self.sprite_frames.get("idle", [None])[0]
         for state in COLORS:
@@ -260,7 +321,7 @@ class BuddyApp:
         max_frames = max((len(v) for v in self.sprite_frames.values() if v), default=1)
 
         if self.mode == "idle":
-            # idle 特殊节奏：frame_0 停留 8s，然后快速闪烁其余帧（眨眼）
+            # idle 特殊节奏：frame_0 停留 4s，然后快速闪烁其余帧（眨眼）
             idle_frames = self.sprite_frames.get("idle", [])
             n = len(idle_frames)
             if n <= 1:
@@ -276,16 +337,51 @@ class BuddyApp:
                 else:
                     self.idle_cycle_start = now
                     self.frame_idx = 0
+        elif self.mode == "think":
+            # think 特殊节奏：frame_0 停留 2s，然后快速闪烁其余帧
+            think_frames = self.sprite_frames.get("think", [])
+            n = len(think_frames)
+            if n <= 1:
+                self.frame_idx = 0
+            else:
+                now = time.time()
+                elapsed = now - self.think_cycle_start
+                if elapsed < 2.0:
+                    self.frame_idx = 0
+                elif elapsed < 2.0 + 0.12 * (n - 1):
+                    pos = int((elapsed - 2.0) / 0.12)
+                    self.frame_idx = min(pos + 1, n - 1)
+                else:
+                    self.think_cycle_start = now
+                    self.frame_idx = 0
         else:
             self.idle_cycle_start = time.time()
+            self.think_cycle_start = time.time()
             self.frame_idx = int(time.time() * 8) % max_frames if max_frames > 0 else 0
 
         # 粒子效果
-        cat_head_y = PAD_TOP + 5  # 小猫头部区域（更贴近头顶）
+        # sleep 猫咪蜷缩姿态，猫头在左下区域
+        cat_head_x = W // 2 - 20  # 猫头偏左
+        cat_head_y = PAD_TOP + PET_SIZE * 0.55  # 猫头在精灵图中下方
         if self.mode == "sleep" and random.random() < 0.08:
-            self.particles.append([W//2 + random.uniform(-10, 10), cat_head_y, 1.0, "z", "#6a6a8a"])
+            self.particles.append([cat_head_x + random.uniform(-8, 8), cat_head_y, 1.0, "z", "#6a6a8a"])
+
+        # busy 旋转加载点（贴合猫头）
+        if self.mode == "busy":
+            if random.random() < 0.15:
+                dots = ["·", "•", "●"]
+                dot = random.choice(dots)
+                self.particles.append([W//2 + random.uniform(-10, 10), PAD_TOP + 20, 0.8, dot, "#e17055"])
+
+        # typing 代码符号（从小猫手部/胸口出现）
+        if self.mode == "typing":
+            if random.random() < 0.18:
+                code_chars = ["{", "}", "<", ">", "/", ";", "=", "(", ")"]
+                char = random.choice(code_chars)
+                self.particles.append([W//2 + random.uniform(-15, 15), PAD_TOP + PET_SIZE * 0.65, 1.0, char, "#6c5ce7"])
+
         if self.mode == "heart" and random.random() < 0.12:
-            self.particles.append([W//2 + random.uniform(-PET_SIZE//2, PET_SIZE//2), cat_head_y, 1.0, "<3", "#e84393"])
+            self.particles.append([W//2 + random.uniform(-PET_SIZE//2, PET_SIZE//2), PAD_TOP + 5, 1.0, "<3", "#e84393"])
 
         for p in self.particles:
             p[1] -= 0.8
@@ -330,8 +426,8 @@ class BuddyApp:
             g = int(color_hex[3:5], 16) / 255
             b = int(color_hex[5:7], 16) / 255
             cr.set_source_rgba(r, g, b, life)
-            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-            cr.set_font_size(12)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            cr.set_font_size(16)
             cr.move_to(x, y)
             cr.show_text(ch)
 

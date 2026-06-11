@@ -66,8 +66,8 @@ assert_eq "pre 后 msg 正确" "Bash: ls" "$(get_field "$STATE" "msg")"
 
 curl -s -X POST "http://127.0.0.1:$PORT/api/hook" -H "Content-Type: application/json" -d '{"event":"post_tool_use","msg":"Done"}'
 STATE=$(curl -s "http://127.0.0.1:$PORT/api/state")
-assert_eq "post 后 mode=idle" "idle" "$(get_field "$STATE" "mode")"
-assert_eq "post 后 msg=Thinking" "Thinking" "$(get_field "$STATE" "msg")"
+assert_eq "post 后 mode=happy" "happy" "$(get_field "$STATE" "mode")"
+assert_eq "post 后 msg=Done!" "Done! ✨" "$(get_field "$STATE" "msg")"
 
 curl -s -X POST "http://127.0.0.1:$PORT/api/hook" -H "Content-Type: application/json" -d '{"event":"stop","msg":"Done"}'
 STATE=$(curl -s "http://127.0.0.1:$PORT/api/state")

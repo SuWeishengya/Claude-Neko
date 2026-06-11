@@ -179,6 +179,18 @@ new_hooks = {
             ]
         }
     ],
+    "UserPromptSubmit": [
+        {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{install_dir}/venv/bin/python {install_dir}/hook_bridge.py",
+                    "async": True
+                }
+            ]
+        }
+    ],
     "SessionEnd": [
         {
             "matcher": "",

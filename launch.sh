@@ -103,6 +103,16 @@ if [ "$SERVER_READY" != "true" ]; then
     exit 1
 fi
 
+# 发送 session_start 事件 → 小猫进入 think 状态
+"$PYTHON" -c "
+import urllib.request, json
+urllib.request.urlopen(urllib.request.Request(
+    'http://127.0.0.1:$PORT/api/hook',
+    data=json.dumps({'event':'session_start','msg':'Thinking...'}).encode(),
+    headers={'Content-Type':'application/json'}
+), timeout=2)
+" 2>/dev/null || true
+
 # 启动 neko.py（GNOME Wayland 下强制 XWayland 以支持置顶）
 BUDDY_ENV=""
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then

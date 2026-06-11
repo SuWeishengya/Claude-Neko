@@ -7,6 +7,7 @@ Claude Neko — GTK3 桌面悬浮窗
 
 import os
 import argparse
+import numpy as np
 
 # GNOME Wayland 下强制走 XWayland，以支持置顶和拖拽
 if os.environ.get("XDG_SESSION_TYPE") == "wayland" and not os.environ.get("GDK_BACKEND"):
@@ -37,20 +38,37 @@ ASSETS = Path(__file__).parent / "assets" / "cat"
 API_URL = f"http://127.0.0.1:{args.port}"
 
 COLORS = {
-    "sleep": (0.49, 0.49, 0.60),    # #7c7c9a
-    "idle":  (1.00, 0.62, 0.26),    # #FF9F43
-    "busy":  (0.88, 0.44, 0.33),    # #e17055
-    "attention": (0.99, 0.80, 0.37),# #fdcb6e
-    "heart": (0.91, 0.26, 0.58),    # #e84393
+    "sleep":     (0.49, 0.49, 0.60),  # #7c7c9a 灰紫
+    "idle":      (0.31, 0.80, 0.77),  # #4ecdc4 青绿
+    "think":     (1.00, 0.62, 0.26),  # #FF9F43 橙色
+    "busy":      (0.88, 0.44, 0.33),  # #e17055 橙红
+    "typing":    (0.42, 0.36, 0.91),  # #6c5ce7 紫色
+    "subagent":  (0.04, 0.52, 0.89),  # #0984e3 蓝色
+    "attention": (0.99, 0.80, 0.37),  # #fdcb6e 黄色
+    "heart":     (0.91, 0.26, 0.58),  # #e84393 粉色
+    "happy":     (0.00, 0.72, 0.58),  # #00b894 绿色
+    "error":     (0.84, 0.19, 0.19),  # #d63031 红色
 }
 MSGS = {
-    "sleep": "zZz...", "idle": "Ready", "busy": "Working...",
-    "attention": "Approval!", "heart": "Approved!",
+    "sleep":     "zZz...",
+    "idle":      "Ready",
+    "think":     "Thinking...",
+    "busy":      "Working...",
+    "typing":    "Coding...",
+    "subagent":  "Helper...",
+    "attention": "Approval!",
+    "heart":     "Approved!",
+    "happy":     "Done! ✨",
+    "error":     "Error!",
 }
 
 PET_SIZE = 110
-W, H = 170, 240
-FPS_MS = 500
+PAD_TOP = 70    # 审批框 + 间距
+PAD_BOT = 40    # 状态文字 + 粒子
+PAD_SIDE = 15   # 左右边距
+W = PET_SIZE + PAD_SIDE * 2
+H = PAD_TOP + PET_SIZE + PAD_BOT
+FPS_MS = 125
 
 
 def load_sprites():
@@ -65,14 +83,19 @@ def load_sprites():
             f = folder / f"frame_{i}.png"
             if not f.exists():
                 break
-            img = Image.open(f).convert("RGBA").resize((PET_SIZE, PET_SIZE), Image.NEAREST)
-            # PIL → cairo ImageSurface
+            img = Image.open(f).convert("RGBA").resize((PET_SIZE, PET_SIZE), Image.LANCZOS)
+            # Cairo FORMAT_ARGB32 需要预乘 alpha（premultiplied alpha）
+            # PIL 是直通 alpha，必须先转换，否则半透明边缘会渲染出白边
+            arr = np.array(img, dtype=np.uint8)
+            alpha = arr[:, :, 3].astype(np.float32) / 255.0
+            arr[:, :, 0] = (arr[:, :, 0].astype(np.float32) * alpha).astype(np.uint8)
+            arr[:, :, 1] = (arr[:, :, 1].astype(np.float32) * alpha).astype(np.uint8)
+            arr[:, :, 2] = (arr[:, :, 2].astype(np.float32) * alpha).astype(np.uint8)
+            # Cairo ARGB32 小端序字节序 = BGRA，需要交换 R↔B
+            arr_bgra = arr[:, :, [2, 1, 0, 3]]
             surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, PET_SIZE, PET_SIZE)
-            ctx = cairo.Context(surface)
-            # 将 PIL 像素写入 cairo surface
-            pil_data = img.tobytes('raw', 'BGRA')
             cairo_data = surface.get_data()
-            cairo_data[:] = pil_data
+            cairo_data[:] = arr_bgra.tobytes()
             surface.mark_dirty()
             frames.append(surface)
         if frames:
@@ -127,6 +150,7 @@ class BuddyApp:
         # 状态
         self.mode = "idle"
         self.frame_idx = 0
+        self.idle_cycle_start = time.time()  # idle 眨眼计时
         self.particles = []
         self.sd = {}
 
@@ -163,7 +187,7 @@ class BuddyApp:
         p = self.sd.get("prompt")
         if not p:
             return False
-        pet_top = H // 2 + 8 - PET_SIZE // 2
+        pet_top = PAD_TOP
         box_h = 52
         box_w = PET_SIZE + 16
         box_x = (W - box_w) // 2 + 4
@@ -234,13 +258,34 @@ class BuddyApp:
         if self._shutdown:
             return False
         max_frames = max((len(v) for v in self.sprite_frames.values() if v), default=1)
-        self.frame_idx = int(time.time() * 2) % max_frames if max_frames > 0 else 0
+
+        if self.mode == "idle":
+            # idle 特殊节奏：frame_0 停留 8s，然后快速闪烁其余帧（眨眼）
+            idle_frames = self.sprite_frames.get("idle", [])
+            n = len(idle_frames)
+            if n <= 1:
+                self.frame_idx = 0
+            else:
+                now = time.time()
+                elapsed = now - self.idle_cycle_start
+                if elapsed < 4.0:
+                    self.frame_idx = 0
+                elif elapsed < 4.0 + 0.08 * (n - 1):
+                    blink_pos = int((elapsed - 4.0) / 0.08)
+                    self.frame_idx = min(blink_pos + 1, n - 1)
+                else:
+                    self.idle_cycle_start = now
+                    self.frame_idx = 0
+        else:
+            self.idle_cycle_start = time.time()
+            self.frame_idx = int(time.time() * 8) % max_frames if max_frames > 0 else 0
 
         # 粒子效果
+        cat_head_y = PAD_TOP + 5  # 小猫头部区域（更贴近头顶）
         if self.mode == "sleep" and random.random() < 0.08:
-            self.particles.append([W//2 + random.uniform(-5, 15), 30, 1.0, "z", "#6a6a8a"])
+            self.particles.append([W//2 + random.uniform(-10, 10), cat_head_y, 1.0, "z", "#6a6a8a"])
         if self.mode == "heart" and random.random() < 0.12:
-            self.particles.append([random.uniform(30, W-30), 45, 1.0, "<3", "#e84393"])
+            self.particles.append([W//2 + random.uniform(-PET_SIZE//2, PET_SIZE//2), cat_head_y, 1.0, "<3", "#e84393"])
 
         for p in self.particles:
             p[1] -= 0.8
@@ -266,21 +311,15 @@ class BuddyApp:
         self._draw_approval(cr)
 
     def _draw_pet(self, cr):
-        # idle + "Ready" → 用 sleep 图标（空闲睡觉）
-        # idle + "Thinking" → 用 idle 图标（思考中）
         draw_mode = self.mode
-        if self.mode == "idle" and self.sd.get("msg") == "Ready":
-            draw_mode = "sleep"
         frames = self.sprite_frames.get(draw_mode) or self.sprite_frames.get("idle", [])
         if not frames:
             return
         surface = frames[self.frame_idx % len(frames)]
 
         cx = W / 2
-        cy = H / 2 + 8
-
         x = cx - PET_SIZE / 2
-        y = cy - PET_SIZE / 2
+        y = PAD_TOP
         cr.set_source_surface(surface, x, y)
         cr.paint()
 
@@ -298,7 +337,7 @@ class BuddyApp:
 
     def _draw_ui(self, cr):
         sd = self.sd
-        pet_bottom = H // 2 + 8 + PET_SIZE // 2 + 8
+        pet_bottom = PAD_TOP + PET_SIZE + 8
         y = pet_bottom
 
         # 状态文字（优先显示 msg，否则用默认 MSGS）
@@ -321,7 +360,7 @@ class BuddyApp:
             return
 
         # 审批框显示在小猫上方，宽度与小猫一致
-        pet_top = H // 2 + 8 - PET_SIZE // 2
+        pet_top = PAD_TOP
         box_h = 52
         box_w = PET_SIZE + 16  # 126px，比小猫宽一点
         box_x = (W - box_w) // 2 + 4

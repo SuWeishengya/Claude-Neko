@@ -31,7 +31,7 @@ SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── 全局状态 ─────────────────────────────────────────────────
 state = {
-    "mode":          "idle",       # sleep|idle|busy|attention|heart|dizzy
+    "mode":          "idle",       # sleep|idle|think|busy|typing|subagent|attention|heart|happy|error
     "total":         0,
     "running":       0,
     "waiting":       0,
@@ -51,9 +51,12 @@ state = {
 }
 
 # 最后一次收到事件的时间戳（用于心跳超时）
-# 初始化为 inf，等第一个 hook 事件到达后才开始计时
-# 避免 server 启动后、Claude 发出第一个 tool_use 前就被心跳超时杀掉
 last_event_time = float('inf')
+# 最后一次 stop 事件的时间戳（用于 sleep 延迟切换）
+last_stop_time = float('inf')
+
+# Claude 会话文件目录（用于检测会话是否存活）
+CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 
 # 线程锁：保护 state 字典的并发读写
 state_lock = threading.Lock()
@@ -81,20 +84,56 @@ def remove_registration():
     reg_file = SESSIONS_DIR / f"{args.session_id}.json"
     reg_file.unlink(missing_ok=True)
 
-# ─── 心跳超时检查 ─────────────────────────────────────────────
+# ─── 会话存活检查 ─────────────────────────────────────────────
+
+def is_session_alive():
+    """检查 Claude 会话文件是否还存在（会话结束时 Claude 会清理）"""
+    if not args.session_id:
+        return True
+    try:
+        for f in CLAUDE_SESSIONS_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text())
+                if data.get("sessionId") == args.session_id:
+                    return True
+            except (json.JSONDecodeError, OSError):
+                continue
+    except OSError:
+        pass
+    return False
+
 
 def heartbeat_checker():
-    """后台线程：检查心跳超时，无事件则自动关闭"""
-    global last_event_time
+    """后台线程：检查会话存活 + sleep 延迟切换"""
+    global last_event_time, last_stop_time
     while True:
-        time.sleep(2)
+        time.sleep(1)
         with state_lock:
             if state["shutdown"]:
                 break
-        if args.session_id and last_event_time != float('inf') and (time.time() - last_event_time > 120):
-            print("⏰ 心跳超时（120 秒无事件），自动关闭")
-            do_shutdown()
-            break
+            # 定时过渡（仅在 last_stop_time 被设置后生效）
+            # Claude 活跃期间 last_stop_time=inf，think 由事件驱动不退出
+            if last_stop_time != float('inf'):
+                elapsed = time.time() - last_stop_time
+                if state["mode"] == "happy" and elapsed >= 1:
+                    state["mode"] = "think"
+                    state["msg"] = "Thinking..."
+                elif state["mode"] == "think" and elapsed >= 10:
+                    state["mode"] = "idle"
+                    state["msg"] = "Ready"
+                elif state["mode"] == "idle" and elapsed >= 30:
+                    state["mode"] = "sleep"
+                    state["msg"] = "zZz..."
+        # 自动修复注册文件（防止旧进程残留导致 hook 事件丢失）
+        if args.session_id:
+            write_registration(args.port)
+
+        # 收到过事件后才开始检查会话存活
+        if args.session_id and last_event_time != float('inf'):
+            if not is_session_alive():
+                print("🐾 Claude 会话已结束，自动关闭")
+                do_shutdown()
+                break
 
 
 shutdown_event = threading.Event()
@@ -136,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global last_event_time
+        global last_event_time, last_stop_time
         # Content-Length 上限检查（1MB），防止内存耗尽攻击
         length = int(self.headers.get("Content-Length", 0))
         if length > 1_000_000:
@@ -189,28 +228,61 @@ class Handler(BaseHTTPRequestHandler):
             event = body.get("event", "")
 
             with state_lock:
-                if event == "pre_tool_use":
+                if event in ("session_start", "user_prompt_submit"):
+                    last_stop_time = float('inf')
+                    state["running"] = 0
+                    state["waiting"] = 0
+                    state["mode"] = "think"
+                    state["msg"] = "Thinking..."
+                    state["connected"] = True
+                    state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
+
+                elif event == "pre_tool_use":
+                    last_stop_time = float('inf')
                     state["running"] += 1
-                    state["mode"] = "busy"
-                    state["msg"] = body.get("msg", "")[:40]
+                    tool_name = body.get("tool_name", "")
+                    if tool_name in ("Edit", "Write", "NotebookEdit"):
+                        state["mode"] = "typing"
+                        state["msg"] = body.get("msg", "")[:40]
+                    elif tool_name == "Agent":
+                        state["mode"] = "subagent"
+                        state["msg"] = "Calling helper..."
+                    else:
+                        state["mode"] = "busy"
+                        state["msg"] = body.get("msg", "")[:40]
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
 
                 elif event == "post_tool_use":
+                    last_stop_time = float('inf')
                     state["running"] = max(0, state["running"] - 1)
                     if state["running"] == 0 and state["waiting"] == 0:
-                        state["mode"] = "idle"
-                        state["msg"] = "Thinking"
+                        state["mode"] = "happy"
+                        state["msg"] = "Done! ✨"
+                        last_stop_time = time.time()  # 启动 happy→think 计时
                     else:
                         state["msg"] = body.get("msg", "")[:40]
 
+                elif event == "post_tool_use_failure":
+                    last_stop_time = float('inf')
+                    state["running"] = max(0, state["running"] - 1)
+                    state["mode"] = "error"
+                    state["msg"] = body.get("msg", "Error!")[:30]
+
                 elif event == "stop":
+                    was_working = state["running"] > 0 or state["mode"] in ("busy", "typing", "subagent")
                     state["running"] = 0
                     state["waiting"] = 0
-                    state["mode"] = "idle"
-                    state["msg"] = "Ready"
+                    last_stop_time = time.time()
+                    if was_working:
+                        state["mode"] = "happy"
+                        state["msg"] = "Done! ✨"
+                    else:
+                        state["mode"] = "idle"
+                        state["msg"] = "Ready"
 
                 elif event == "permission_request":
+                    last_stop_time = float('inf')
                     prompt = body.get("prompt")
                     # 校验 prompt 结构，防止注入恶意数据
                     if isinstance(prompt, dict) and "id" in prompt:
@@ -220,6 +292,7 @@ class Handler(BaseHTTPRequestHandler):
                         state["msg"] = body.get("msg", "Approval needed")
 
                 elif event == "session_end":
+                    last_stop_time = float('inf')
                     # 状态清理在锁内（与 stop 事件一致），HTTP 响应在锁外
                     state["running"] = 0
                     state["waiting"] = 0
@@ -228,10 +301,17 @@ class Handler(BaseHTTPRequestHandler):
 
                 elif event == "cc_switch_update":
                     # 只允许已知字段，防止注入任意 state
-                    ALLOWED_FIELDS = {"mode", "msg", "tokens_today", "tokens", "tokens_total", "total", "running"}
-                    for key in ALLOWED_FIELDS:
+                    # 注意：running 由 pre/post 事件独占管理，monitor 的 running 语义不同
+                    ALLOWED_DATA = {"tokens_today", "tokens", "tokens_total", "total"}
+                    for key in ALLOWED_DATA:
                         if key in body:
                             state[key] = body[key]
+                    # mode/msg 只在空闲状态下才接受外部覆盖
+                    # 避免 monitor 轮询覆盖掉 busy/think/typing 等活跃状态
+                    if state["mode"] == "idle":
+                        for key in ("mode", "msg"):
+                            if key in body:
+                                state[key] = body[key]
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state.get('msg', '')}"] + state["entries"][:9]
 
@@ -283,9 +363,8 @@ def main():
     # 写注册文件
     write_registration(args.port)
 
-    # 启动心跳检查线程（仅自动模式）
-    if args.session_id:
-        threading.Thread(target=heartbeat_checker, daemon=True).start()
+    # 启动心跳检查线程
+    threading.Thread(target=heartbeat_checker, daemon=True).start()
 
     # 启动 HTTP 服务
     http_thread = threading.Thread(target=start_http_server, daemon=True)

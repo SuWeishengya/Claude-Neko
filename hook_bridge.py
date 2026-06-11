@@ -73,11 +73,15 @@ def main():
     session_id = event_data.get("session_id")
     hook_event = event_data.get("hook_event_name", "")
 
-    # 查找 server 端口
+    # 查找 server 端口（注册表优先，fallback 到 9100）
     port = find_server_port(session_id)
     if not port:
-        # server 未运行，静默退出
-        return
+        # 注册表找不到 → 尝试 9100（兼容手动模式）
+        try:
+            urllib.request.urlopen("http://127.0.0.1:9100/api/state", timeout=1)
+            port = 9100
+        except Exception:
+            return
 
     # 根据事件类型构造转发数据
     if hook_event == "PreToolUse":
@@ -98,6 +102,7 @@ def main():
         post_to_server(port, "/api/hook", {
             "event": "pre_tool_use",
             "msg": msg,
+            "tool_name": tool_name,
         })
 
     elif hook_event == "PostToolUse":
@@ -110,7 +115,7 @@ def main():
     elif hook_event == "PostToolUseFailure":
         tool_name = event_data.get("tool_name", "")
         post_to_server(port, "/api/hook", {
-            "event": "post_tool_use",
+            "event": "post_tool_use_failure",
             "msg": f"Failed: {tool_name}",
         })
 
@@ -132,12 +137,15 @@ def main():
             },
         })
 
+    elif hook_event == "UserPromptSubmit":
+        # 用户提交问题 → 小猫进入 think
+        post_to_server(port, "/api/hook", {
+            "event": "user_prompt_submit",
+            "msg": "Thinking...",
+        })
+
     elif hook_event == "SessionEnd":
         post_to_server(port, "/api/shutdown", {})
-
-    elif hook_event == "SessionStart":
-        # SessionStart 由 launch.sh 处理，这里不转发
-        pass
 
 
 if __name__ == "__main__":

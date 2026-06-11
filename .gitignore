@@ -3,7 +3,4 @@ __pycache__/
 *.pyc
 pids.txt
 neko.log
-OPTIMIZATION.md
-SPRITE_GUIDE.md
-PROJECT.md
-SPRITE_ASSETS.md
+assets/neko/

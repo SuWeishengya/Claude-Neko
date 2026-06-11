@@ -10,11 +10,15 @@ Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) �
 
 | Claude 在干嘛 | 小猫的反应 |
 |--------------|-----------|
-| 空闲等你输入 | 😴 睡觉，显示 "Ready" |
-| 正在思考 | 🤔 待机，显示 "Thinking" |
+| 空闲等你输入 | 😺 待机眨眼，8 秒一次 |
+| 正在思考 | 🤔 思考中，显示 "Thinking..." |
 | 执行工具（读文件、跑命令…） | 👀 盯着你看，显示工具名 |
+| 写代码（Edit/Write） | ⌨️ 打字中 |
+| 调用子代理（Agent） | 🔷 呼叫助手 |
 | 等你审批操作 | 🙋 举手，弹出 Approve/Deny 按钮 |
-| 积累够 token 升级了 | 🎉 开心跳跃，撒星星 |
+| 操作完成 | 🎉 开心 Done! ✨ |
+| 工具报错 | ❌ 错误提示 |
+| 长时间空闲 | 💤 30 秒后自动睡觉 |
 
 **审批操作** — Claude 需要权限时，小猫身上会弹出按钮，直接点击即可批准或拒绝，不用切回终端。
 
@@ -106,7 +110,7 @@ Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.
 ### 测试
 
 ```bash
-bash test_all.sh    # 52 项测试，覆盖 API、安全、并发、等级、多实例
+bash test_all.sh    # 38 项测试，覆盖 API、安全、并发、多实例
 ```
 
 ### 技术栈

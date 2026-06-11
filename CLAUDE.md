@@ -32,7 +32,7 @@ neko disable   # 关闭自动启动
 neko status    # 查看状态
 ```
 
-测试：`bash test_all.sh`（52 项测试，覆盖 API、安全、并发、边界）。无 lint 工具或构建步骤。
+测试：`bash test_all.sh`（38 项测试，覆盖 API、安全、并发、边界）。无 lint 工具或构建步骤。
 
 ## 架构
 
@@ -58,7 +58,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 **server.py** — HTTP 后端（`ThreadingTCPServer`），端口 9100+（动态分配）。关键端点：
 - `GET /api/state` — 返回当前状态 JSON
-- `POST /api/hook` — 接收事件：`pre_tool_use`、`post_tool_use`、`stop`、`permission_request`、`session_end`、`cc_switch_update`
+- `POST /api/hook` — 接收事件：`pre_tool_use`、`post_tool_use`、`post_tool_use_failure`、`stop`、`permission_request`、`session_end`、`cc_switch_update`
 - `POST /api/permission` — 审批/拒绝操作
 - `POST /api/shutdown` — 优雅关闭
 
@@ -66,14 +66,15 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 **launch.sh** — SessionStart hook 调用。清理残留、找空闲端口、启动 server + widget、写注册文件。
 
-**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 500ms 渲染帧动画 + 轮询状态。支持拖拽、粒子效果、审批弹窗。
+**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 250ms 渲染帧动画 + 500ms 轮询状态。支持拖拽、粒子效果、审批弹窗。窗口尺寸自适应（140×220，基于 PET_SIZE=110）。idle 状态下 frame_0 停留 8s 后快速眨眼。Cairo ARGB32 需预乘 alpha（PIL 直通 alpha → numpy 预乘 → BGRA 字节序）。
 
 **claude_monitor.py** — 仅手动模式使用。每 3 秒扫描 `~/.claude/projects/` 下的 session jsonl 文件。
 
 ## 关键文件
 
 - `config.json` — 显示配置（`port`）
-- `assets/cat/{state}/frame_{N}.png` — 精灵图，状态：sleep/idle/busy/attention/heart
+- `assets/cat/{state}/frame_{N}.png` — 精灵图，10 状态：sleep/idle/think/busy/typing/subagent/attention/heart/happy/error
+- `tools/cleanup_sprites.py` — 精灵图边缘清理工具（黑线 flood fill 去噪）
 - `neko` — 命令行管理工具
 - `install.sh` / `uninstall.sh` — 一键安装/卸载
 - `start.sh` / `stop.sh` — 手动模式启动/停止
@@ -92,15 +93,24 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 ## 状态机
 
-mode 值及对应显示文字和图标：
+10 种 mode，各有独立精灵图。状态流转：
 
-| mode | 显示文字 | 图标 | 触发条件 |
-|------|---------|------|---------|
-| idle | Ready | sleep | stop 事件后（真正空闲） |
-| idle | Thinking | idle | post_tool_use 后 running=0（思考中） |
-| busy | {tool_name}: {desc} | attention | pre_tool_use |
-| attention | Approve: {tool} | busy | permission_request |
-| heart | Approved! | heart | approve 操作 |
+| mode | 默认文字 | 触发条件 |
+|------|---------|---------|
+| idle | Ready | 初始状态；stop 且无事可做；deny 审批后 |
+| sleep | zZz... | idle 状态 + stop 后 30s 无用户事件（自动触发） |
+| think | Thinking... | post_tool_use 且 running 归零 |
+| busy | {tool} | pre_tool_use（非 Edit/Write/Agent） |
+| typing | Coding... | pre_tool_use（Edit/Write/NotebookEdit） |
+| subagent | Helper... | pre_tool_use（Agent） |
+| attention | Approve: {tool} | permission_request（需 prompt.id） |
+| heart | Approved! | approve 操作 |
+| happy | Done! ✨ | stop 且之前有活跃工作（think/busy/typing 等） |
+| error | Error! | post_tool_use_failure |
+
+**过渡链**：stop（有工作）→ `happy` —5s→ `idle` —30s→ `sleep`
+
+**cc_switch_update 规则**：数据字段（tokens/total）始终更新；mode/msg 仅在当前为 `idle` 时才接受覆盖，防止 monitor 轮询覆盖活跃状态。`running` 计数由 pre/post 事件独占管理。
 
 ## 多实例
 
@@ -111,9 +121,12 @@ mode 值及对应显示文字和图标：
 - X11 透明：`_NET_WM_WINDOW_TYPE_DOCK` 窗口类型，回退到 `_NET_WM_WINDOW_TYPE_NOTIFICATION`
 - GNOME Wayland：`start.sh` 和 `launch.sh` 设置 `GDK_BACKEND=x11` 强制走 XWayland
 - 精灵图加载：PIL Image → `cairo.ImageSurface.create_for_data()`，每帧缓存
-- 心跳超时：server.py 120 秒无事件自动 shutdown（仅自动模式）
+- 会话存活：server.py 通过检查 `~/.claude/sessions/` 下的 session 文件判断会话是否存活（替代 120s 超时），仅自动模式
+- 手动模式也启用心跳线程（sleep 过渡 + session 存活检查），自动/手动行为一致
 
 ## 依赖
 
 - `PyGObject` + `pycairo` — GTK3 Python 绑定（通过 `--system-site-packages` 访问系统包）
 - `pillow` — 精灵图加载（PIL Image → cairo.ImageSurface）
+- `numpy` — Cairo 预乘 alpha 计算
+- `scipy` — 精灵图边缘清理（`scipy.ndimage`）

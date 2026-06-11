@@ -124,9 +124,34 @@ def heartbeat_checker():
                 elif state["mode"] == "idle" and elapsed >= 30:
                     state["mode"] = "sleep"
                     state["msg"] = "zZz..."
-        # 自动修复注册文件（防止旧进程残留导致 hook 事件丢失）
-        if args.session_id:
-            write_registration(args.port)
+        # 自愈：扫描所有活跃 Claude 会话，自动注册到当前 server
+        # 解决新会话 / 旧 server 重启后注册丢失的问题
+        try:
+            for f in CLAUDE_SESSIONS_DIR.glob("*.json"):
+                try:
+                    data = json.loads(f.read_text())
+                    sid = data.get("sessionId")
+                    if sid:
+                        reg_file = SESSIONS_DIR / f"{sid}.json"
+                        need_write = True
+                        if reg_file.exists():
+                            try:
+                                reg = json.loads(reg_file.read_text())
+                                pid = reg.get("pid_server", 0)
+                                os.kill(pid, 0)  # 检查旧 PID 是否存活
+                                need_write = False  # 旧注册仍有效
+                            except (ProcessLookupError, json.JSONDecodeError, OSError):
+                                need_write = True
+                        if need_write:
+                            reg_file.write_text(json.dumps({
+                                "session_id": sid, "port": args.port,
+                                "pid_server": os.getpid(),
+                                "created_at": datetime.now().isoformat(),
+                            }))
+                except (json.JSONDecodeError, OSError):
+                    continue
+        except OSError:
+            pass
 
         # 收到过事件后才开始检查会话存活
         if args.session_id and last_event_time != float('inf'):

@@ -4,3 +4,5 @@ __pycache__/
 pids.txt
 neko.log
 assets/neko/
+assets/cat_backup/
+assets/cat_clean/

@@ -23,10 +23,10 @@ cleanup() {
     [ -n "$PID_WIDGET" ] && kill "$PID_WIDGET" 2>/dev/null || true
 }
 trap cleanup EXIT
-log "=== started ==="
 
-# 创建运行时目录
+# 创建运行时目录（必须在 log 之前，否则新安装时日志目录不存在会崩溃）
 mkdir -p "$SESSIONS_DIR"
+log "=== started ==="
 
 # 从 stdin 读取 hook 数据
 INPUT=$(cat)

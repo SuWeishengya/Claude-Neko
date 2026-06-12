@@ -54,8 +54,12 @@ state = {
 last_event_time = float('inf')
 # 会话存活检查的宽限期（claude -c 启动时 session 文件可能还没创建好）
 session_alive_grace_period = 10  # 秒
+# session_end 后的最大空闲超时（防止 Claude 崩溃时僵尸 server）
+session_max_idle_timeout = 60  # 秒
 # 最后一次 stop 事件的时间戳（用于 sleep 延迟切换）
 last_stop_time = float('inf')
+# 是否收到过 session_end 事件
+session_ended = False
 
 # Claude 会话文件目录（用于检测会话是否存活）
 CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
@@ -171,6 +175,12 @@ def heartbeat_checker():
                 if not alive:
                     log(f"session not alive, shutting down. session_id={args.session_id}")
                     print("🐾 Claude 会话已结束，自动关闭")
+                    do_shutdown()
+                    break
+                # session_end 后无新事件超时 → 僵尸防护
+                if session_ended and elapsed_since_event >= session_max_idle_timeout:
+                    log(f"session ended and idle for {session_max_idle_timeout}s, shutting down")
+                    print("🐾 会话结束后无新事件，自动关闭")
                     do_shutdown()
                     break
 
@@ -342,12 +352,16 @@ class Handler(BaseHTTPRequestHandler):
                         state["msg"] = body.get("msg", "Approval needed")
 
                 elif event == "session_end":
-                    last_stop_time = float('inf')
-                    # 状态清理在锁内（与 stop 事件一致），HTTP 响应在锁外
+                    # 启动 idle→sleep 计时（而非 inf 阻止过渡）
+                    last_stop_time = time.time()
+                    session_ended = True
+                    # 状态清理
                     state["running"] = 0
                     state["waiting"] = 0
+                    state["prompt"] = None  # 清除审批弹窗
                     state["mode"] = "idle"
                     state["msg"] = "Session ended"
+                    state["connected"] = False
 
                 elif event == "cc_switch_update":
                     # 只允许已知字段，防止注入任意 state

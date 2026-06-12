@@ -43,7 +43,7 @@ Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widge
 Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (shutdown)
+Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (session_end)
 ```
 
 ### 手动模式（轮询）
@@ -62,11 +62,11 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 - `POST /api/permission` — 审批/拒绝操作
 - `POST /api/shutdown` — 优雅关闭
 
-**hook_bridge.py** — 从 stdin 读取 Claude Code hook JSON，路由到对应 server.py。通过 `~/.local/state/claude-desktop-pet/sessions/` 注册表查找端口。
+**hook_bridge.py** — 从 stdin 读取 Claude Code hook JSON，路由到对应 server.py。通过 `~/.local/state/claude-neko/sessions/` 注册表查找端口。
 
 **launch.sh** — SessionStart hook 调用。清理残留、找空闲端口、启动 server + widget、写注册文件。
 
-**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 250ms 渲染帧动画 + 500ms 轮询状态。支持拖拽、粒子效果、审批弹窗。窗口尺寸自适应（140×220，基于 PET_SIZE=110）。idle 状态下 frame_0 停留 8s 后快速眨眼。Cairo ARGB32 需预乘 alpha（PIL 直通 alpha → numpy 预乘 → BGRA 字节序）。
+**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 125ms 渲染帧动画 + 500ms 轮询状态。支持拖拽、粒子效果（sleep:z、busy:加载点、typing:代码符号、heart:爱心）、审批弹窗、多实例颜色方案（橘/蓝/粉/灰/黑/白）。窗口尺寸自适应（140×220，基于 PET_SIZE=110）。idle 状态下 frame_0 停留 4s 后快速眨眼，think 状态下 frame_0 停留 2s。Cairo ARGB32 需预乘 alpha（PIL 直通 alpha → numpy 预乘 → BGRA 字节序）。
 
 **claude_monitor.py** — 仅手动模式使用。每 3 秒扫描 `~/.claude/projects/` 下的 session jsonl 文件。
 
@@ -84,8 +84,8 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 ## 安装后文件结构
 
 ```
-~/.local/share/claude-desktop-pet/   # 代码（只读）
-~/.local/state/claude-desktop-pet/   # 运行时数据（读写）
+~/.local/share/claude-neko/   # 代码（只读）
+~/.local/state/claude-neko/   # 运行时数据（读写）
   └── sessions/                      # session 注册表
 ~/.local/bin/neko                     # 命令行工具
 ~/.claude/settings.json              # hooks 配置（追加，不覆盖）
@@ -99,7 +99,7 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 |------|---------|---------|
 | idle | Ready | 初始状态；stop 且无事可做；deny 审批后 |
 | sleep | zZz... | idle 状态 + stop 后 30s 无用户事件（自动触发） |
-| think | Thinking... | post_tool_use 且 running 归零 |
+| think | Thinking... | user_prompt_submit（用户提交问题） |
 | busy | {tool} | pre_tool_use（非 Edit/Write/Agent） |
 | typing | Coding... | pre_tool_use（Edit/Write/NotebookEdit） |
 | subagent | Helper... | pre_tool_use（Agent） |
@@ -108,21 +108,22 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 | happy | Done! ✨ | stop 且之前有活跃工作（think/busy/typing 等） |
 | error | Error! | post_tool_use_failure |
 
-**过渡链**：stop（有工作）→ `happy` —5s→ `idle` —30s→ `sleep`
+**过渡链**：stop（有工作）→ `happy` —1s→ `idle` —30s→ `sleep`
 
 **cc_switch_update 规则**：数据字段（tokens/total）始终更新；mode/msg 仅在当前为 `idle` 时才接受覆盖，防止 monitor 轮询覆盖活跃状态。`running` 计数由 pre/post 事件独占管理。
 
 ## 多实例
 
-每只小猫独立端口（9100+），独立进程，窗口自动错开 30px。通过 `~/.local/state/claude-desktop-pet/sessions/` 注册表协调。会话结束时对应小猫自动退出，不影响其他小猫。
+每只小猫独立端口（9100+），独立进程，窗口自动错开 130px（PET_SIZE+20）。通过 `~/.local/state/claude-neko/sessions/` 注册表协调。支持 6 种颜色方案（橘/蓝/粉/灰/黑/白），按 offset 顺序分配。`claude -c` 继续同一会话时共享同一只猫，SessionEnd 不会误杀。
 
 ## 技术实现
 
 - X11 透明：`_NET_WM_WINDOW_TYPE_DOCK` 窗口类型，回退到 `_NET_WM_WINDOW_TYPE_NOTIFICATION`
 - GNOME Wayland：`start.sh` 和 `launch.sh` 设置 `GDK_BACKEND=x11` 强制走 XWayland
 - 精灵图加载：PIL Image → `cairo.ImageSurface.create_for_data()`，每帧缓存
-- 会话存活：server.py 通过检查 `~/.claude/sessions/` 下的 session 文件判断会话是否存活（替代 120s 超时），仅自动模式
+- 会话存活：server.py 通过检查 `~/.claude/sessions/` 下的 session 文件判断会话是否存活。启动后 10s 宽限期（等 Claude 创建 session 文件），session_end 后 60s 无事件自动关闭（僵尸防护）
 - 手动模式也启用心跳线程（sleep 过渡 + session 存活检查），自动/手动行为一致
+- SessionStart 有 `startup`（新会话）和 `resume`（claude -c）两种 matcher
 
 ## 依赖
 

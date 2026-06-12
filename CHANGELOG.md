@@ -40,3 +40,10 @@ All notable changes to Claude Neko will be documented in this file.
 - install.sh 使用 rsync --delete 同步 assets
 - test_all.sh 38 项测试
 - 清理 settings.json 旧 claude-desktop-pet 配置
+- ruff 代码规范检查（ruff.toml）
+- .github/ISSUE_TEMPLATE（Bug Report + Feature Request）
+- .github/PULL_REQUEST_TEMPLATE.md
+- CONTRIBUTING.md 贡献指南
+- packaging/aur/（PKGBUILD + .install，Arch Linux AUR 包）
+- docs/ARCHITECTURE.md 架构文档
+- docs/ROADMAP.md 开发路线图

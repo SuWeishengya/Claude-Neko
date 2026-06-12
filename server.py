@@ -132,9 +132,6 @@ def heartbeat_checker():
                 if state["mode"] == "happy" and elapsed >= 1:
                     state["mode"] = "idle"
                     state["msg"] = "Ready"
-                elif state["mode"] == "think" and elapsed >= 10:
-                    state["mode"] = "idle"
-                    state["msg"] = "Ready"
                 elif state["mode"] == "idle" and elapsed >= 30:
                     state["mode"] = "sleep"
                     state["msg"] = "zZz..."
@@ -268,13 +265,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/hook":
-            last_event_time = time.time()
             try:
                 body = json.loads(self.rfile.read(length)) if length else {}
             except json.JSONDecodeError:
                 self.send_error(400, "Invalid JSON")
                 return
             event = body.get("event", "")
+            # cc_switch_update 是 monitor 轮询，不应重置 session 存活检查计时器
+            if event != "cc_switch_update":
+                last_event_time = time.time()
 
             with state_lock:
                 if event == "session_start":

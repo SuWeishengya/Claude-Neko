@@ -195,7 +195,7 @@ class BuddyApp:
         # 超出屏幕左边缘则换行（向上堆叠）
         if x < geo.x:
             x = geo.x + geo.width - W - 20
-            y = geo.y + geo.height - H - 20 - (args.offset * 30)
+            y = geo.y + geo.height - H - 20 - (args.offset * (PET_SIZE + 20))
         self.win.move(x, y)
 
         # 拖拽支持

@@ -217,7 +217,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global last_event_time, last_stop_time
+        global last_event_time, last_stop_time, session_ended
         # Content-Length 上限检查（1MB），防止内存耗尽攻击
         length = int(self.headers.get("Content-Length", 0))
         if length > 1_000_000:
@@ -446,7 +446,7 @@ def start_http_server():
 
 def main():
     log(f"server starting, port={args.port}, session_id={args.session_id}")
-    print(f"\n🐾 Claude Neko")
+    print("\n🐾 Claude Neko")
     print(f"{'─' * 40}")
     print(f"🌐 http://127.0.0.1:{args.port}")
     if args.session_id:

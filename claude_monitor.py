@@ -4,7 +4,9 @@ Claude Code 会话监控 → Desktop Neko 桥接
 直接从 ~/.claude 的 session jsonl 文件读取 token 使用数据
 """
 
-import json, time, urllib.request, sys, threading, glob, os
+import json
+import time
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -142,7 +144,7 @@ def check_and_push():
 
 
 def main():
-    print(f"Claude Code Monitor started")
+    print("Claude Code Monitor started")
     print(f"  Scanning: {PROJECTS_DIR}")
 
     # 启动时先推一次

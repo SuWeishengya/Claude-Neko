@@ -1,0 +1,10 @@
+# ruff 配置
+# E402: gi.require_version 必须在 import gi 之后、from gi.repository 之前
+# E741: l 是 HLS 色彩空间的标准亮度变量名
+# F841: 部分变量在重构后可能未使用，需逐个审查
+
+[lint]
+ignore = [
+    "E402",    # module-import-not-at-top-of-file (gi.require_version 要求)
+    "E741",    # ambiguous-variable-name: l (HLS 色彩空间的 lightness)
+]

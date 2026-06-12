@@ -17,7 +17,12 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib
 import cairo
-import json, time, math, random, urllib.request, threading
+import json
+import time
+import math
+import random
+import urllib.request
+import threading
 from pathlib import Path
 from PIL import Image
 
@@ -434,7 +439,7 @@ class BuddyApp:
             ]
 
         line_h = 17
-        pad_x, pad_y = 10, 8
+        _pad_x, pad_y = 10, 8
         win_w = 140
         win_h = pad_y + len(lines) * line_h + pad_y
         da.set_size_request(win_w, win_h)
@@ -804,7 +809,7 @@ class BuddyApp:
         lines.append((f"Running: {running}", cc, 9, False))
 
         line_h = 17
-        pad_x, pad_y = 8, 6
+        _pad_x, pad_y = 8, 6
         win_w = 105
         win_h = pad_y + len(lines) * line_h + pad_y
         da.set_size_request(win_w, win_h)

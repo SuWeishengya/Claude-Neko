@@ -4,6 +4,9 @@
 
 Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 的桌面宠物伴侣。它通过 Claude Code 的 Hooks 机制实时感知工作状态，在你的屏幕角落显示一只小猫动画——空闲时睡觉、忙碌时盯着你看、等你审批时举手请求、升级时开心跳跃。
 
+<!-- TODO: 添加截图或 GIF 演示 -->
+<!-- ![Claude Neko Demo](docs/demo.gif) -->
+
 ## 它能做什么
 
 **实时状态** — 小猫会根据 Claude 的状态切换动画：

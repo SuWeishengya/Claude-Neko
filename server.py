@@ -135,34 +135,28 @@ def heartbeat_checker():
                 elif state["mode"] == "idle" and elapsed >= 30:
                     state["mode"] = "sleep"
                     state["msg"] = "zZz..."
-        # 自愈：扫描所有活跃 Claude 会话，自动注册到当前 server
-        # 解决新会话 / 旧 server 重启后注册丢失的问题
-        try:
-            for f in CLAUDE_SESSIONS_DIR.glob("*.json"):
+        # 自愈：确保当前 session 的注册文件存在且有效
+        # 只注册自己的 session，避免劫持其他 Neko 实例的 session
+        if args.session_id:
+            reg_file = SESSIONS_DIR / f"{args.session_id}.json"
+            need_write = True
+            if reg_file.exists():
                 try:
-                    data = json.loads(f.read_text())
-                    sid = data.get("sessionId")
-                    if sid:
-                        reg_file = SESSIONS_DIR / f"{sid}.json"
-                        need_write = True
-                        if reg_file.exists():
-                            try:
-                                reg = json.loads(reg_file.read_text())
-                                pid = reg.get("pid_server", 0)
-                                os.kill(pid, 0)  # 检查旧 PID 是否存活
-                                need_write = False  # 旧注册仍有效
-                            except (ProcessLookupError, json.JSONDecodeError, OSError):
-                                need_write = True
-                        if need_write:
-                            reg_file.write_text(json.dumps({
-                                "session_id": sid, "port": args.port,
-                                "pid_server": os.getpid(),
-                                "created_at": datetime.now().isoformat(),
-                            }))
-                except (json.JSONDecodeError, OSError):
-                    continue
-        except OSError:
-            pass
+                    reg = json.loads(reg_file.read_text())
+                    pid = reg.get("pid_server", 0)
+                    os.kill(pid, 0)  # 检查旧 PID 是否存活
+                    need_write = False  # 旧注册仍有效
+                except (ProcessLookupError, json.JSONDecodeError, OSError):
+                    need_write = True
+            if need_write:
+                try:
+                    reg_file.write_text(json.dumps({
+                        "session_id": args.session_id, "port": args.port,
+                        "pid_server": os.getpid(),
+                        "created_at": datetime.now().isoformat(),
+                    }))
+                except OSError:
+                    pass
 
         # 收到过事件后才开始检查会话存活（给宽限期让 Claude 创建 session 文件）
         if args.session_id and last_event_time != float('inf'):
@@ -189,10 +183,10 @@ _shutdown_started = False
 def do_shutdown():
     """优雅关闭（防重复调用）"""
     global _shutdown_started
-    if _shutdown_started:
-        return
-    _shutdown_started = True
     with state_lock:
+        if _shutdown_started:
+            return
+        _shutdown_started = True
         state["shutdown"] = True
     remove_registration()
     # 延迟退出，让 neko_widget 有时间收到 shutdown 信号
@@ -282,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                     state["running"] = 0
                     state["waiting"] = 0
                     state["mode"] = "idle"
-                    state["msg"] = "Ready"
+                    state["msg"] = body.get("msg", "Ready")[:40]
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} Session started"] + state["entries"][:9]
 
@@ -318,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                     if state["running"] == 0 and state["waiting"] == 0:
                         state["mode"] = "happy"
                         state["msg"] = "Done! ✨"
-                        last_stop_time = time.time()  # 启动 happy→think 计时
+                        last_stop_time = time.time()  # 启动 happy→idle 计时
                     else:
                         state["msg"] = body.get("msg", "")[:40]
 

@@ -82,10 +82,92 @@ COLOR_SCHEMES = [
 ]
 
 
+def _rgb_to_hls_vectorized(r, g, b):
+    """向量化 RGB→HLS 转换（numpy 数组操作）"""
+    maxc = np.maximum(r, np.maximum(g, b))
+    minc = np.minimum(r, np.minimum(g, b))
+    l = (maxc + minc) / 2.0
+
+    s = np.zeros_like(l)
+    mask_diff = maxc != minc
+    mask_l50 = l <= 0.5
+    diff = maxc - minc
+    sumc = maxc + minc
+
+    # 饱和度计算
+    cond1 = mask_diff & mask_l50
+    cond2 = mask_diff & ~mask_l50
+    s[cond1] = diff[cond1] / sumc[cond1]
+    s[cond2] = diff[cond2] / (2.0 - sumc[cond2])
+
+    # 色相计算
+    h = np.zeros_like(l)
+    mask_r = (maxc == r) & mask_diff
+    mask_g = (maxc == g) & mask_diff
+    mask_b = (maxc == b) & mask_diff
+
+    h[mask_r] = ((g[mask_r] - b[mask_r]) / diff[mask_r]) % 6.0
+    h[mask_g] = (b[mask_g] - r[mask_g]) / diff[mask_g] + 2.0
+    h[mask_b] = (r[mask_b] - g[mask_b]) / diff[mask_b] + 4.0
+    h = h / 6.0
+
+    return h, l, s
+
+
+def _hls_to_rgb_vectorized(h, l, s):
+    """向量化 HLS→RGB 转换（numpy 数组操作）"""
+    r = np.zeros_like(h)
+    g = np.zeros_like(h)
+    b = np.zeros_like(h)
+
+    mask_zero = s == 0
+    r[mask_zero] = l[mask_zero]
+    g[mask_zero] = l[mask_zero]
+    b[mask_zero] = l[mask_zero]
+
+    mask_nonzero = ~mask_zero
+    if mask_nonzero.any():
+        h_nz = h[mask_nonzero]
+        l_nz = l[mask_nonzero]
+        s_nz = s[mask_nonzero]
+
+        q = np.where(l_nz < 0.5, l_nz * (1.0 + s_nz), l_nz + s_nz - l_nz * s_nz)
+        p = 2.0 * l_nz - q
+
+        # 将色相转换为 [0, 6) 范围
+        h6 = (h_nz % 1.0) * 6.0
+
+        # 6 个扇区
+        for i, (t_min, t_max) in enumerate([
+            (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)
+        ]):
+            mask_sector = (h6 >= t_min) & (h6 < t_max)
+            if not mask_sector.any():
+                continue
+            t = h6[mask_sector]
+            if i % 2 == 0:
+                val = p[mask_sector] + (q[mask_sector] - p[mask_sector]) * t
+            else:
+                val = q[mask_sector] + (p[mask_sector] - q[mask_sector]) * (t - 1.0)
+
+            if i == 0:
+                r[mask_nonzero] = np.where(mask_sector, val, r[mask_nonzero])
+            elif i == 1:
+                g[mask_nonzero] = np.where(mask_sector, val, g[mask_nonzero])
+            elif i == 2:
+                b[mask_nonzero] = np.where(mask_sector, val, b[mask_nonzero])
+            elif i == 3:
+                b[mask_nonzero] = np.where(mask_sector, val, b[mask_nonzero])
+            elif i == 4:
+                r[mask_nonzero] = np.where(mask_sector, val, r[mask_nonzero])
+            elif i == 5:
+                g[mask_nonzero] = np.where(mask_sector, val, g[mask_nonzero])
+
+    return r, g, b
+
+
 def apply_color_scheme(img_array, scheme):
     """对 RGBA 图像数组应用颜色方案（向量化 HSL 调整）"""
-    from colorsys import rgb_to_hls, hls_to_rgb
-
     arr = img_array.copy().astype(np.float32) / 255.0
     alpha = arr[:, :, 3]
 
@@ -99,26 +181,21 @@ def apply_color_scheme(img_array, scheme):
     g = arr[:, :, 1][mask]
     b = arr[:, :, 2][mask]
 
-    # 批量 RGB -> HLS（逐像素，但只处理非透明像素）
-    pixels = np.stack([r, g, b], axis=1)
-    hls_pixels = np.zeros_like(pixels)
+    # 向量化 RGB → HLS
+    h, l, s = _rgb_to_hls_vectorized(r, g, b)
 
-    for idx in range(len(pixels)):
-        h_val, l_val, s_val = rgb_to_hls(*pixels[idx])
-        h_val = (h_val + scheme["hue_shift"]) % 1.0
-        s_val = min(1.0, s_val * scheme["sat_mult"])
-        l_val = min(1.0, l_val * scheme["light_mult"])
-        hls_pixels[idx] = [h_val, l_val, s_val]
+    # 应用颜色方案
+    h = (h + scheme["hue_shift"]) % 1.0
+    s = np.minimum(1.0, s * scheme["sat_mult"])
+    l = np.minimum(1.0, l * scheme["light_mult"])
 
-    # 批量 HLS -> RGB
-    for idx in range(len(hls_pixels)):
-        r_out, g_out, b_out = hls_to_rgb(*hls_pixels[idx])
-        pixels[idx] = [r_out, g_out, b_out]
+    # 向量化 HLS → RGB
+    r_out, g_out, b_out = _hls_to_rgb_vectorized(h, l, s)
 
     # 写回
-    arr[:, :, 0][mask] = pixels[:, 0]
-    arr[:, :, 1][mask] = pixels[:, 1]
-    arr[:, :, 2][mask] = pixels[:, 2]
+    arr[:, :, 0][mask] = r_out
+    arr[:, :, 1][mask] = g_out
+    arr[:, :, 2][mask] = b_out
 
     return (arr * 255).astype(np.uint8)
 

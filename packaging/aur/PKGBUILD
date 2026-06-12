@@ -11,7 +11,7 @@ license=('MIT')
 depends=('python' 'gtk3' 'python-cairo' 'python-gobject' 'python-pillow' 'python-numpy' 'python-scipy')
 makedepends=('git')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/SuWeishengya/Claude-Neko/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('b17c423a004c3f15c7c954d4466a9bf2d5b8c8e0ca75fc88b0153ea6e5cd0885')
 install="${pkgname}.install"
 
 package() {

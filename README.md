@@ -10,7 +10,7 @@ Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) �
 
 | Claude 在干嘛 | 小猫的反应 |
 |--------------|-----------|
-| 空闲等你输入 | 😺 待机眨眼，8 秒一次 |
+| 空闲等你输入 | 😺 待机眨眼，4 秒一次 |
 | 正在思考 | 🤔 思考中，显示 "Thinking..." |
 | 执行工具（读文件、跑命令…） | 👀 盯着你看，显示工具名 |
 | 写代码（Edit/Write） | ⌨️ 打字中 |
@@ -22,7 +22,7 @@ Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) �
 
 **审批操作** — Claude 需要权限时，小猫身上会弹出按钮，直接点击即可批准或拒绝，不用切回终端。
 
-**多只小猫** — 同时开多个 Claude 会话？每只会话有自己的小猫，独立端口，窗口自动错开，互不干扰。
+**多只小猫** — 同时开多个 Claude 会话？每只会话有自己的小猫，独立端口，窗口自动错开，还有 6 种颜色方案（橘/蓝/粉/灰/黑/白）。`claude -c` 继续同一会话时共享同一只猫。
 
 **自动生命周期** — 装好后不用管。打开 Claude Code，小猫自动出现；关闭会话，小猫自动退出。
 
@@ -39,7 +39,7 @@ bash install.sh
 **卸载：**
 
 ```bash
-bash ~/.local/share/claude-desktop-pet/uninstall.sh
+bash ~/.local/share/claude-neko/uninstall.sh
 ```
 
 ## 日常使用
@@ -79,7 +79,7 @@ Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widge
 Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (shutdown)
+Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (session_end)
 ```
 
 - **server.py** — HTTP 后端（ThreadingTCPServer），端口 9100+，维护全局状态
@@ -100,8 +100,8 @@ Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.
 ### 运行时文件
 
 ```
-~/.local/share/claude-desktop-pet/   # 代码（只读）
-~/.local/state/claude-desktop-pet/   # 运行时数据（读写）
+~/.local/share/claude-neko/   # 代码（只读）
+~/.local/state/claude-neko/   # 运行时数据（读写）
   └── sessions/                      # session 注册表（JSON）
 ~/.local/bin/neko                    # 命令行工具
 ~/.claude/settings.json              # hooks 配置（安装时追加，不覆盖）

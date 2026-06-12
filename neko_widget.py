@@ -280,6 +280,13 @@ class BuddyApp:
                             Gdk.EventMask.BUTTON_RELEASE_MASK |
                             Gdk.EventMask.POINTER_MOTION_MASK)
         self.win.connect("button-press-event", self._on_button_press)
+        self.win.connect("button-release-event", self._on_button_release)
+
+        # 点击/拖拽状态追踪
+        self._press_x = 0
+        self._press_y = 0
+        self._press_time = 0
+        self._is_dragging = False
 
         # 绘制
         self.win.connect("draw", self._on_draw)
@@ -313,11 +320,28 @@ class BuddyApp:
 
     # ─── 点击/拖拽 ──────────────────────────────────────────
     def _on_button_press(self, widget, event):
-        if event.button == 1:
+        if event.button == 1:  # 左键
             # 先检查是否点击了审批按钮
             if self._check_approval_click(event.x, event.y):
                 return True
+            # 记录按下位置，准备拖拽
+            self._press_x = event.x
+            self._press_y = event.y
+            self._press_time = event.time
+            self._is_dragging = False
             self.win.begin_move_drag(int(event.button), int(event.x_root), int(event.y_root), event.time)
+        elif event.button == 3:  # 右键
+            self._show_context_menu(event)
+        return True
+
+    def _on_button_release(self, widget, event):
+        if event.button == 1 and not self._is_dragging:
+            # 按下和释放位置接近，且时间短 → 视为点击
+            dx = abs(event.x - self._press_x)
+            dy = abs(event.y - self._press_y)
+            dt = event.time - self._press_time
+            if dx < 5 and dy < 5 and dt < 500:
+                self._show_statistics()
         return True
 
     def _check_approval_click(self, x, y):
@@ -344,6 +368,137 @@ class BuddyApp:
             self._decide("deny")
             return True
         return False
+
+    def _show_context_menu(self, event):
+        """显示右键菜单"""
+        menu = Gtk.Menu()
+
+        # 状态信息（只读）
+        status_item = Gtk.MenuItem(label=f"状态: {self.mode}")
+        status_item.set_sensitive(False)
+        menu.append(status_item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # 复制状态到剪板
+        copy_item = Gtk.MenuItem(label="📋 复制状态")
+        copy_item.connect("activate", self._copy_status)
+        menu.append(copy_item)
+
+        # 查看日志
+        log_item = Gtk.MenuItem(label="📄 查看日志")
+        log_item.connect("activate", self._open_log)
+        menu.append(log_item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # 重启
+        restart_item = Gtk.MenuItem(label="🔄 重启")
+        restart_item.connect("activate", self._restart)
+        menu.append(restart_item)
+
+        # 停止
+        stop_item = Gtk.MenuItem(label="⏹ 停止")
+        stop_item.connect("activate", self._stop)
+        menu.append(stop_item)
+
+        menu.show_all()
+        menu.popup_at_pointer(event)
+
+    def _show_statistics(self):
+        """点击小猫显示统计信息"""
+        sd = self.sd
+        mode = sd.get("mode", "idle")
+        msg = sd.get("msg", "")
+        tokens = sd.get("tokens_today", 0)
+        total = sd.get("total", 0)
+        running = sd.get("running", 0)
+
+        # 构建统计文本
+        lines = [
+            f"🐱 Claude Neko",
+            f"━━━━━━━━━━━━━━",
+            f"状态: {mode}",
+            f"消息: {msg}",
+            f"━━━━━━━━━━━━━━",
+            f"今日 Token: {tokens:,}",
+            f"总会话数: {total}",
+            f"运行中工具: {running}",
+        ]
+
+        # 创建浮动标签显示统计
+        if hasattr(self, '_stats_label') and self._stats_label:
+            self._stats_label.destroy()
+
+        self._stats_label = Gtk.Window()
+        self._stats_label.set_decorated(False)
+        self._stats_label.set_keep_above(True)
+        self._stats_label.set_type_hint(Gdk.WindowTypeHint.TOOLTIP)
+
+        label = Gtk.Label(label="\n".join(lines))
+        label.set_margin_start(12)
+        label.set_margin_end(12)
+        label.set_margin_top(8)
+        label.set_margin_bottom(8)
+
+        # 设置等宽字体
+        label.set_markup(
+            '<span font_family="monospace" size="small">'
+            + "\n".join(lines).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            + '</span>'
+        )
+
+        self._stats_label.add(label)
+
+        # 定位到小猫旁边
+        win_x, win_y = self.win.get_position()
+        self._stats_label.move(win_x + W + 5, win_y + PAD_TOP)
+
+        self._stats_label.show_all()
+
+        # 3 秒后自动关闭
+        GLib.timeout_add(3000, self._hide_statistics)
+
+    def _hide_statistics(self):
+        """隐藏统计信息"""
+        if hasattr(self, '_stats_label') and self._stats_label:
+            self._stats_label.destroy()
+            self._stats_label = None
+        return False
+
+    def _copy_status(self, widget):
+        """复制当前状态到剪贴板"""
+        sd = self.sd
+        text = f"mode={sd.get('mode','idle')} msg={sd.get('msg','')} tokens={sd.get('tokens_today',0)}"
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        clipboard.store()
+
+    def _open_log(self, widget):
+        """打开日志文件"""
+        import subprocess
+        log_file = Path.home() / ".local" / "state" / "claude-neko" / "server.log"
+        if log_file.exists():
+            subprocess.Popen(["xdg-open", str(log_file)])
+
+    def _restart(self, widget):
+        """重启小猫"""
+        import subprocess
+        subprocess.Popen(["bash", "-c", f"sleep 0.5 && {ASSETS.parent.parent}/start.sh"])
+        self._do_exit()
+
+    def _stop(self, widget):
+        """停止小猫"""
+        def post():
+            try:
+                req = urllib.request.Request(
+                    f"{API_URL}/api/shutdown",
+                    data=b'{}',
+                    headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=2)
+            except Exception:
+                pass
+        threading.Thread(target=post, daemon=True).start()
 
     # ─── 状态轮询 ───────────────────────────────────────────
     def _poll(self):

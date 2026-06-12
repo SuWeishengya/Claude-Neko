@@ -321,9 +321,6 @@ class BuddyApp:
     # ─── 点击/拖拽 ──────────────────────────────────────────
     def _on_button_press(self, widget, event):
         if event.button == 1:  # 左键
-            # 先检查是否点击了审批按钮
-            if self._check_approval_click(event.x, event.y):
-                return True
             # 记录按下位置，准备拖拽
             self._press_x = event.x
             self._press_y = event.y
@@ -343,31 +340,6 @@ class BuddyApp:
             if dx < 5 and dy < 5 and dt < 500:
                 self._show_statistics()
         return True
-
-    def _check_approval_click(self, x, y):
-        """检查点击是否在审批按钮区域内"""
-        p = self.sd.get("prompt")
-        if not p:
-            return False
-        pet_top = PAD_TOP
-        box_h = 52
-        box_w = PET_SIZE + 16
-        box_x = (W - box_w) // 2 + 4
-        y0 = pet_top - box_h - 8
-        btn_y = y0 + box_h - 20
-        btn_h = 14
-        gap = 6
-        btn_w = (box_w - gap * 3) // 2
-        btn_left_x = box_x + gap
-        btn_right_x = box_x + gap * 2 + btn_w
-
-        if btn_left_x <= x <= btn_left_x + btn_w and btn_y <= y <= btn_y + btn_h:
-            self._decide("once")
-            return True
-        if btn_right_x <= x <= btn_right_x + btn_w and btn_y <= y <= btn_y + btn_h:
-            self._decide("deny")
-            return True
-        return False
 
     def _show_context_menu(self, event):
         """显示右键菜单"""
@@ -530,22 +502,6 @@ class BuddyApp:
         self._shutdown = True
         Gtk.main_quit()
 
-    # ─── 审批操作 ────────────────────────────────────────────
-    def _decide(self, decision):
-        pid = self.sd.get("prompt", {}).get("id")
-        if not pid:
-            return
-        def post():
-            try:
-                req = urllib.request.Request(
-                    f"{API_URL}/api/permission",
-                    data=json.dumps({"id": pid, "decision": decision}).encode(),
-                    headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=2)
-            except Exception:
-                pass
-        threading.Thread(target=post, daemon=True).start()
-
     # ─── 定时刷新 ───────────────────────────────────────────
     def _tick(self):
         if self._shutdown:
@@ -683,67 +639,46 @@ class BuddyApp:
         cr.show_text(msg)
 
     def _draw_approval(self, cr):
+        """绘制审批提示（纯展示，无交互按钮）"""
         p = self.sd.get("prompt")
         if not p:
             return
 
-        # 审批框显示在小猫上方，宽度与小猫一致
+        # 提示框显示在小猫上方
         pet_top = PAD_TOP
-        box_h = 52
-        box_w = PET_SIZE + 16  # 126px，比小猫宽一点
+        box_h = 36
+        box_w = PET_SIZE + 16
         box_x = (W - box_w) // 2 + 4
         y0 = pet_top - box_h - 8
 
-        cr.set_source_rgba(0.11, 0.07, 0.03, 0.95)
+        # 背景
+        cr.set_source_rgba(0.11, 0.07, 0.03, 0.90)
         self._rounded_rect(cr, box_x, y0, box_w, box_h, 6)
         cr.fill()
-        cr.set_source_rgba(0.82, 0.60, 0.13, 1)
+        # 边框（闪烁效果）
+        pulse = abs(math.sin(time.time() * 3)) * 0.3 + 0.5
+        cr.set_source_rgba(0.99, 0.80, 0.37, pulse)
         self._rounded_rect(cr, box_x, y0, box_w, box_h, 6)
         cr.stroke()
 
-        # 标题 + 工具名（只显示工具名关键字）
-        cr.set_font_size(12)
-        cr.set_source_rgba(0.82, 0.60, 0.13, 1)
+        # 工具名
+        cr.set_font_size(11)
+        cr.set_source_rgba(0.99, 0.80, 0.37, 1)
         tool_text = p.get("tool", "?")
-        label = f"Approve: {tool_text}"
+        label = f"⏳ 等待审批: {tool_text}"
+        if len(label) > 18:
+            label = label[:16] + ".."
         ext = cr.text_extents(label)
         cr.move_to(W / 2 - ext.width / 2, y0 + 14)
         cr.show_text(label)
 
-        # 小提示
-        hint = p.get("hint", "")
-        if hint:
-            if len(hint) > 22:
-                hint = hint[:20] + ".."
-            cr.set_font_size(9)
-            cr.set_source_rgba(0.545, 0.580, 0.620, 1)
-            ext = cr.text_extents(hint)
-            cr.move_to(W / 2 - ext.width / 2, y0 + 26)
-            cr.show_text(hint)
-
-        # 小按钮（居中对称）
-        btn_y = y0 + box_h - 20
-        btn_h = 14
-        gap = 6
-        btn_w = (box_w - gap * 3) // 2
-        btn_left_x = box_x + gap
-        btn_right_x = box_x + gap * 2 + btn_w
-        self._draw_button(cr, btn_left_x, btn_y, btn_w, btn_h,
-                          "Approve", (0.137, 0.525, 0.212, 1),
-                          (1, 1, 1, 1), "once")
-        self._draw_button(cr, btn_right_x, btn_y, btn_w, btn_h,
-                          "Deny", (0.19, 0.21, 0.24, 1),
-                          (0.90, 0.93, 0.95, 1), "deny")
-
-    def _draw_button(self, cr, x, y, w, h, label, bg_color, text_color, decision):
-        cr.set_source_rgba(*bg_color)
-        self._rounded_rect(cr, x, y, w, h, 3)
-        cr.fill()
-        cr.set_font_size(10)
-        cr.set_source_rgba(*text_color)
-        ext = cr.text_extents(label)
-        cr.move_to(x + w / 2 - ext.width / 2, y + h / 2 + ext.height / 2)
-        cr.show_text(label)
+        # 提示文字
+        cr.set_font_size(9)
+        cr.set_source_rgba(0.7, 0.7, 0.7, 0.8)
+        hint = "请在终端中操作"
+        ext = cr.text_extents(hint)
+        cr.move_to(W / 2 - ext.width / 2, y0 + 27)
+        cr.show_text(hint)
 
     @staticmethod
     def _rounded_rect(cr, x, y, w, h, r):

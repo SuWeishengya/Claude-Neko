@@ -13,7 +13,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-INSTALL_DIR = Path.home() / ".local" / "share" / "claude-neko"
+from common import get_install_dir
+INSTALL_DIR = get_install_dir()
 
 def _get_github_token():
     """从 git credential 获取 GitHub token"""
@@ -29,7 +30,7 @@ def _get_github_token():
         pass
     return None
 VERSION_FILE = INSTALL_DIR / "version.json"
-BACKUP_DIR = Path.home() / ".local" / "share" / "claude-neko.bak"
+BACKUP_DIR = INSTALL_DIR.parent / "claude-neko.bak"
 GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
 # 不会被更新覆盖的文件/目录
@@ -171,7 +172,7 @@ def download_and_install(update_url, progress_callback=None):
     _cleanup(tmp_dir)
 
     # 6. 同步到开发目录（如果存在）
-    dev_dir = Path.home() / "Work" / "Claude-Neko"
+    dev_dir = INSTALL_DIR.parent.parent / "Work" / "Claude-Neko"
     if dev_dir.exists() and dev_dir != INSTALL_DIR:
         try:
             _copy_update(source_dir, dev_dir)

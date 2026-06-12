@@ -9,8 +9,10 @@ import os
 import argparse
 import numpy as np
 
+from common import IS_LINUX, IS_WAYLAND, get_state_dir, open_with_default
+
 # GNOME Wayland 下强制走 XWayland，以支持置顶和拖拽
-if os.environ.get("XDG_SESSION_TYPE") == "wayland" and not os.environ.get("GDK_BACKEND"):
+if IS_WAYLAND and not os.environ.get("GDK_BACKEND"):
     os.environ["GDK_BACKEND"] = "x11"
 
 import gi
@@ -248,7 +250,7 @@ def load_sprites(color_index=0):
     return sprites
 
 
-PREFS_FILE = Path.home() / ".local" / "state" / "claude-neko" / "preferences.json"
+PREFS_FILE = get_state_dir() / "preferences.json"
 
 def _load_prefs():
     """读取用户偏好"""
@@ -343,8 +345,9 @@ class BuddyApp:
         GLib.timeout_add(FPS_MS, self._tick)
         GLib.timeout_add(200, self._poll)
 
-        # X11/XWayland 下定期刷新 set_keep_above
-        GLib.timeout_add(5000, lambda: (self.win.set_keep_above(True), True)[-1])
+        # X11/XWayland 下定期刷新 set_keep_above（Windows 不需要）
+        if IS_LINUX:
+            GLib.timeout_add(5000, lambda: (self.win.set_keep_above(True), True)[-1])
 
         # shutdown 检测
         self._shutdown = False
@@ -614,8 +617,7 @@ class BuddyApp:
 
     def _open_feedback(self, widget=None):
         """打开 GitHub Issues 页面"""
-        import subprocess
-        subprocess.Popen(["xdg-open", "https://github.com/SuWeishengya/Claude-Neko/issues"])
+        open_with_default("https://github.com/SuWeishengya/Claude-Neko/issues")
 
     def _cat_color_hex(self):
         """获取当前猫咪颜色方案的主色（橘/蓝/粉/灰/黑/白）"""
@@ -907,15 +909,17 @@ class BuddyApp:
 
     def _open_log(self, widget):
         """打开日志文件"""
-        import subprocess
         log_file = Path.home() / ".local" / "state" / "claude-neko" / "server.log"
         if log_file.exists():
-            subprocess.Popen(["xdg-open", str(log_file)])
+            open_with_default(str(log_file))
 
     def _restart(self, widget):
         """重启小猫"""
         import subprocess
-        subprocess.Popen(["bash", "-c", f"sleep 0.5 && {ASSETS.parent.parent}/start.sh"])
+        import sys as _sys
+        start_script = str(ASSETS.parent.parent / "start.sh") if IS_LINUX else str(ASSETS.parent.parent / "neko.py")
+        args = ["bash", "-c", f"sleep 0.5 && {start_script}"] if IS_LINUX else [_sys.executable, start_script, "restart"]
+        subprocess.Popen(args)
         self._do_exit()
 
     def _stop(self, widget):

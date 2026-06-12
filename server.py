@@ -25,6 +25,7 @@ parser.add_argument("--state-dir", type=str,
 args = parser.parse_args()
 
 # ─── 运行时目录 ─────────────────────────────────────────────
+from common import get_claude_sessions_dir, process_exists
 STATE_DIR = Path(args.state_dir)
 SESSIONS_DIR = STATE_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,7 +65,7 @@ last_stop_time = float('inf')
 session_ended = False
 
 # Claude 会话文件目录（用于检测会话是否存活）
-CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
+CLAUDE_SESSIONS_DIR = get_claude_sessions_dir()
 
 # 调试日志
 LOG_FILE = STATE_DIR / "server.log"
@@ -146,9 +147,9 @@ def heartbeat_checker():
                 try:
                     reg = json.loads(reg_file.read_text())
                     pid = reg.get("pid_server", 0)
-                    os.kill(pid, 0)  # 检查旧 PID 是否存活
-                    need_write = False  # 旧注册仍有效
-                except (ProcessLookupError, json.JSONDecodeError, OSError):
+                    if process_exists(pid):
+                        need_write = False  # 旧注册仍有效
+                except (json.JSONDecodeError, OSError):
                     need_write = True
             if need_write:
                 try:

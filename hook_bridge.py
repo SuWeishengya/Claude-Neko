@@ -5,13 +5,13 @@ Claude Code Hook → Desktop Neko 桥接
 """
 
 import json
-import os
 import re
 import sys
 import urllib.request
-from pathlib import Path
 
-STATE_DIR = Path.home() / ".local" / "state" / "claude-neko"
+from common import get_state_dir, process_exists
+
+STATE_DIR = get_state_dir()
 SESSIONS_DIR = STATE_DIR / "sessions"
 LOG_FILE = STATE_DIR / "hook_bridge.log"
 
@@ -36,9 +36,7 @@ def find_server_port(session_id: str) -> "int | None":
         # 检查 server 进程是否还活着
         pid = data.get("pid_server")
         if pid:
-            try:
-                os.kill(pid, 0)  # 不发送信号，只检查进程存在
-            except ProcessLookupError:
+            if not process_exists(pid):
                 # 进程已死，清理注册文件
                 reg_file.unlink(missing_ok=True)
                 return None

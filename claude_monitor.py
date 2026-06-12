@@ -14,9 +14,10 @@ try:
     CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
 except (FileNotFoundError, json.JSONDecodeError):
     CONFIG = {"host": "127.0.0.1", "port": 9100}
-CLAUDE_DIR = Path.home() / ".claude"
-SESSIONS_DIR = CLAUDE_DIR / "sessions"
-PROJECTS_DIR = CLAUDE_DIR / "projects"
+from common import get_claude_dir, get_claude_sessions_dir, get_claude_projects_dir
+CLAUDE_DIR = get_claude_dir()
+SESSIONS_DIR = get_claude_sessions_dir()
+PROJECTS_DIR = get_claude_projects_dir()
 
 POLL_INTERVAL = 3  # 轮询间隔（秒）
 

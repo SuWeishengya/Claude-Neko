@@ -248,6 +248,21 @@ def load_sprites(color_index=0):
     return sprites
 
 
+PREFS_FILE = Path.home() / ".local" / "state" / "claude-neko" / "preferences.json"
+
+def _load_prefs():
+    """读取用户偏好"""
+    try:
+        return json.loads(PREFS_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def _save_prefs(prefs):
+    """保存用户偏好"""
+    PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PREFS_FILE.write_text(json.dumps(prefs, ensure_ascii=False, indent=2))
+
+
 class BuddyApp:
     def __init__(self):
         self.win = Gtk.Window()
@@ -256,6 +271,13 @@ class BuddyApp:
         self.win.set_decorated(False)
         self.win.set_app_paintable(True)
         self.win.set_resizable(False)
+
+        # 加载用户偏好
+        prefs = _load_prefs()
+        self._color_idx = prefs.get("color_idx", args.offset)
+        saved_x = prefs.get("win_x")
+        saved_y = prefs.get("win_y")
+        self._lang = prefs.get("lang", "zh")
 
         # RGBA 透明背景
         screen = self.win.get_screen()
@@ -266,23 +288,23 @@ class BuddyApp:
         # 置顶（X11 下 set_keep_above 有效）
         self.win.set_keep_above(True)
 
-        # 窗口位置：屏幕右下角 + 偏移（多实例错开，向上堆叠）
-        display = Gdk.Display.get_default()
-        monitor = display.get_primary_monitor() or display.get_monitor(0)
-        if not monitor:
-            # 极端情况：无显示器，使用默认窗口位置
-            self.win.move(100, 100)
-            return
-        geo = monitor.get_geometry()
-        # 偏移量：每只小猫完全不遮挡前一只（PET_SIZE + 间距）
-        offset = args.offset * (PET_SIZE + 20)
-        x = geo.x + geo.width - W - 20 - offset
-        y = geo.y + geo.height - H - 20
-        # 超出屏幕左边缘则换行（向上堆叠）
-        if x < geo.x:
-            x = geo.x + geo.width - W - 20
-            y = geo.y + geo.height - H - 20 - (args.offset * (PET_SIZE + 20))
-        self.win.move(x, y)
+        # 窗口位置：优先使用上次保存的位置，否则屏幕右下角 + 偏移
+        if saved_x is not None and saved_y is not None:
+            self.win.move(saved_x, saved_y)
+        else:
+            display = Gdk.Display.get_default()
+            monitor = display.get_primary_monitor() or display.get_monitor(0)
+            if not monitor:
+                self.win.move(100, 100)
+                return
+            geo = monitor.get_geometry()
+            offset = args.offset * (PET_SIZE + 20)
+            x = geo.x + geo.width - W - 20 - offset
+            y = geo.y + geo.height - H - 20
+            if x < geo.x:
+                x = geo.x + geo.width - W - 20
+                y = geo.y + geo.height - H - 20 - (args.offset * (PET_SIZE + 20))
+            self.win.move(x, y)
 
         # 拖拽支持
         self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
@@ -354,6 +376,9 @@ class BuddyApp:
     def _on_button_release(self, widget, event):
         if event.button == 1 and not self._is_dragging:
             self._show_statistics()
+        else:
+            # 拖拽结束，保存窗口位置
+            GLib.timeout_add(500, self._save_position)
         self._is_dragging = False
         return True
 
@@ -582,9 +607,10 @@ class BuddyApp:
             if state not in self.sprite_frames and fallback:
                 self.sprite_frames[state] = [fallback]
         self.win.queue_draw()
-        # 刷新右键菜单的主题色
         if hasattr(self, '_ctx_menu_da') and self._ctx_menu_da:
             self._ctx_menu_da.queue_draw()
+        # 保存颜色偏好
+        self._save_my_prefs()
 
     def _open_feedback(self, widget=None):
         """打开 GitHub Issues 页面"""
@@ -761,6 +787,21 @@ class BuddyApp:
         win.move(int(event.x_root) - 10, int(event.y_root) - 10)
         win.resize(win_w, win_h)
         win.show_all()
+
+    def _save_position(self):
+        """延迟保存窗口位置（拖拽结束后调用）"""
+        self._save_my_prefs()
+        return False  # 停止 GLib timeout
+
+    def _save_my_prefs(self):
+        """保存当前偏好"""
+        prefs = _load_prefs()
+        prefs["color_idx"] = getattr(self, '_color_idx', args.offset)
+        prefs["lang"] = getattr(self, '_lang', 'zh')
+        win_x, win_y = self.win.get_position()
+        prefs["win_x"] = win_x
+        prefs["win_y"] = win_y
+        _save_prefs(prefs)
 
     def _cat_color_rgb(self):
         """获取猫咪颜色方案的 RGB 元组 (r,g,b) 0~1"""

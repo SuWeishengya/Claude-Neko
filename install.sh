@@ -216,7 +216,7 @@ for event in list(existing_hooks.keys()):
         new_hooks_list = []
         for h in matcher.get("hooks", []):
             cmd = h.get("command", "")
-            if "claude-neko" not in cmd:
+            if "claude-neko" not in cmd and "claude-desktop-pet" not in cmd:
                 new_hooks_list.append(h)
         if new_hooks_list:
             matcher["hooks"] = new_hooks_list

@@ -30,6 +30,8 @@ neko restart   # 重启小猫
 neko enable    # 开启自动启动
 neko disable   # 关闭自动启动
 neko status    # 查看状态
+neko version   # 显示版本号
+neko update    # 检查并安装更新
 ```
 
 测试：`bash test_all.sh`（38 项测试，覆盖 API、安全、并发、边界）。无 lint 工具或构建步骤。
@@ -39,11 +41,12 @@ neko status    # 查看状态
 ### 自动模式（hook 驱动）
 
 ```
-Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widget.py
-Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (session_end)
+Claude Code (SessionStart)     ──▶ launch.sh ──▶ server.py + neko_widget.py
+Claude Code (UserPromptSubmit) ──▶ hook_bridge.py ──POST──▶ server.py
+Claude Code (PreToolUse)       ──▶ hook_bridge.py ──POST──▶ server.py
+Claude Code (PostToolUse)      ──▶ hook_bridge.py ──POST──▶ server.py
+Claude Code (Stop)             ──▶ hook_bridge.py ──POST──▶ server.py
+Claude Code (SessionEnd)       ──▶ hook_bridge.py ──POST──▶ server.py (session_end)
 ```
 
 ### 手动模式（轮询）
@@ -58,25 +61,28 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 **server.py** — HTTP 后端（`ThreadingTCPServer`），端口 9100+（动态分配）。关键端点：
 - `GET /api/state` — 返回当前状态 JSON
-- `POST /api/hook` — 接收事件：`pre_tool_use`、`post_tool_use`、`post_tool_use_failure`、`stop`、`permission_request`、`session_end`、`cc_switch_update`
-- `POST /api/permission` — 审批/拒绝操作
+- `POST /api/hook` — 接收事件：`user_prompt_submit`、`pre_tool_use`、`post_tool_use`、`post_tool_use_failure`、`stop`、`permission_request`、`session_end`、`cc_switch_update`
+- `POST /api/permission` — 审批/拒绝操作（旧版交互按钮使用，新版审批框纯展示）
 - `POST /api/shutdown` — 优雅关闭
 
 **hook_bridge.py** — 从 stdin 读取 Claude Code hook JSON，路由到对应 server.py。通过 `~/.local/state/claude-neko/sessions/` 注册表查找端口。
 
 **launch.sh** — SessionStart hook 调用。清理残留、找空闲端口、启动 server + widget、写注册文件。
 
-**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 125ms 渲染帧动画 + 500ms 轮询状态。支持拖拽、粒子效果（sleep:z、busy:加载点、typing:代码符号、heart:爱心）、审批弹窗、多实例颜色方案（橘/蓝/粉/灰/黑/白）。窗口尺寸自适应（140×220，基于 PET_SIZE=110）。idle 状态下 frame_0 停留 4s 后快速眨眼，think 状态下 frame_0 停留 2s。Cairo ARGB32 需预乘 alpha（PIL 直通 alpha → numpy 预乘 → BGRA 字节序）。
+**neko_widget.py** — GTK3 悬浮窗。`set_decorated(False)` 去标题栏，`set_keep_above(True)` 置顶，RGBA visual 实现透明背景。每 125ms 渲染帧动画 + 200ms 轮询状态。支持拖拽（motion 检测区分点击/拖拽）、粒子效果（sleep:z、busy:加载点、typing:代码符号、heart:爱心）、审批弹窗（叠加在猫胸口 82% 处）、右键菜单（Cairo 自绘透明窗口）、左键统计弹窗、多实例颜色方案（橘/蓝/粉/灰/黑/白）。窗口尺寸 140×155（PET_SIZE=110+PAD_TOP=5+PAD_BOT=40）。idle 状态下 frame_0 停留 4s 后快速眨眼，think 状态下 frame_0 停留 2s。Cairo ARGB32 需预乘 alpha（PIL 直通 alpha → numpy 预乘 → BGRA 字节序）。
 
 **claude_monitor.py** — 仅手动模式使用。每 3 秒扫描 `~/.claude/projects/` 下的 session jsonl 文件。
 
 ## 关键文件
 
 - `config.json` — 显示配置（`port`）
+- `version.json` — 版本元数据（version + repo）
+- `updater.py` — 在线更新模块（GitHub Release 检测 + 下载 + 备份 + 安装）
 - `assets/cat/{state}/frame_{N}.png` — 精灵图，10 状态：sleep/idle/think/busy/typing/subagent/attention/heart/happy/error
+- `assets/cat/preview_{color}.png` — 6 种颜色方案预览图（代码渲染）
 - `tools/cleanup_sprites.py` — 精灵图边缘清理工具（黑线 flood fill 去噪）
 - `neko` — 命令行管理工具
-- `install.sh` / `uninstall.sh` — 一键安装/卸载
+- `install.sh` / `uninstall.sh` — 一键安装/卸载（install.sh 用 rsync --delete 同步 assets）
 - `start.sh` / `stop.sh` — 手动模式启动/停止
 - `test_all.sh` — 全面测试脚本（38 项）
 - `pids.txt` — 手动模式进程 PID 文件
@@ -84,10 +90,16 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 ## 安装后文件结构
 
 ```
-~/.local/share/claude-neko/   # 代码（只读）
+~/.local/share/claude-neko/   # 代码 + venv
+  ├── assets/cat/                    # 精灵图
+  ├── venv/                          # Python 虚拟环境（更新时保留）
+  ├── version.json                   # 版本元数据
+  └── updater.py                     # 在线更新模块
 ~/.local/state/claude-neko/   # 运行时数据（读写）
-  └── sessions/                      # session 注册表
-~/.local/bin/neko                     # 命令行工具
+  ├── sessions/                      # session 注册表（JSON）
+  ├── server.log                     # 服务端日志
+  └── hook_bridge.log                # Hook 桥接日志
+~/.local/bin/neko                    # 命令行工具
 ~/.claude/settings.json              # hooks 配置（追加，不覆盖）
 ```
 
@@ -97,20 +109,24 @@ claude_monitor.py ──POST──▶ server.py (127.0.0.1:9100)
 
 | mode | 默认文字 | 触发条件 |
 |------|---------|---------|
-| idle | Ready | 初始状态；stop 且无事可做；deny 审批后 |
+| idle | Ready | 初始状态；stop 且无事可做 |
 | sleep | zZz... | idle 状态 + stop 后 30s 无用户事件（自动触发） |
-| think | Thinking... | user_prompt_submit（用户提交问题） |
+| think | Thinking... | user_prompt_submit；工具完成后 prompt_active 仍为 True 时自动恢复 |
 | busy | {tool} | pre_tool_use（非 Edit/Write/Agent） |
 | typing | Coding... | pre_tool_use（Edit/Write/NotebookEdit） |
 | subagent | Helper... | pre_tool_use（Agent） |
 | attention | Approve: {tool} | permission_request（需 prompt.id） |
-| heart | Approved! | approve 操作 |
-| happy | Done! ✨ | stop 且之前有活跃工作（think/busy/typing 等） |
+| heart | Approved! | pre_tool_use 且 pending_heart=True（审批通过后 0.8s 过渡） → 然后切到 busy/typing |
+| happy | Done! ★ | stop 且之前有活跃工作（think/busy/typing/subagent） |
 | error | Error! | post_tool_use_failure |
+
+**关键状态变量**：
+- `prompt_active` — 用户问题是否还在处理中。`user_prompt_submit` 设为 True，`stop` 设为 False。工具间恢复 think 靠此标记。
+- `pending_heart` — `permission_request` 设为 True，`pre_tool_use` 消费后设为 False。确保审批通过 heart 动画必然触发。
 
 **过渡链**：stop（有工作）→ `happy` —1s→ `idle` —30s→ `sleep`
 
-**cc_switch_update 规则**：数据字段（tokens/total）始终更新；mode/msg 仅在当前为 `idle` 时才接受覆盖，防止 monitor 轮询覆盖活跃状态。`running` 计数由 pre/post 事件独占管理。
+**cc_switch_update 规则**：数据字段（tokens_today/tokens/tokens_total/total）始终更新；mode/msg 仅在当前为 `idle` 时才接受覆盖，防止 monitor 轮询覆盖活跃状态。`running` 计数由 pre/post 事件独占管理。
 
 ## 多实例
 

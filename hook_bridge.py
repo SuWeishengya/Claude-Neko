@@ -47,7 +47,7 @@ def find_server_port(session_id: str) -> "int | None":
             return port
         return None
     except Exception as e:
-        print(f"hook_bridge: failed to read registration: {e}", file=sys.stderr)
+        log(f"failed to read registration: {e}")
         return None
 
 
@@ -62,7 +62,7 @@ def post_to_server(port: int, endpoint: str, data: dict):
         with urllib.request.urlopen(req, timeout=2):
             pass
     except Exception as e:
-        print(f"hook_bridge: {endpoint} failed: {e}", file=sys.stderr)
+        log(f"{endpoint} failed: {e}")
 
 
 def main():

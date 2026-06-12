@@ -5,8 +5,8 @@
 
 set -e
 
-INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
-STATE_DIR="$HOME/.local/state/claude-desktop-pet"
+INSTALL_DIR="$HOME/.local/share/claude-neko"
+STATE_DIR="$HOME/.local/state/claude-neko"
 SESSIONS_DIR="$STATE_DIR/sessions"
 PYTHON="$INSTALL_DIR/venv/bin/python"
 
@@ -14,20 +14,28 @@ PYTHON="$INSTALL_DIR/venv/bin/python"
 PID_SERVER=""
 PID_WIDGET=""
 
+LOG="$HOME/.local/state/claude-neko/launch.log"
+log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
+
 cleanup() {
+    log "CLEANUP: killing server=$PID_SERVER widget=$PID_WIDGET"
     [ -n "$PID_SERVER" ] && kill "$PID_SERVER" 2>/dev/null || true
     [ -n "$PID_WIDGET" ] && kill "$PID_WIDGET" 2>/dev/null || true
 }
 trap cleanup EXIT
+log "=== started ==="
 
 # 创建运行时目录
 mkdir -p "$SESSIONS_DIR"
 
 # 从 stdin 读取 hook 数据
 INPUT=$(cat)
+log "stdin: $INPUT"
 SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null)
+log "session_id: $SESSION_ID"
 
 if [ -z "$SESSION_ID" ]; then
+    log "ERROR: No session_id"
     echo "Error: No session_id" >&2
     exit 1
 fi

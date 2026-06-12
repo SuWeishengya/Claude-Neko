@@ -1,12 +1,12 @@
 #!/bin/bash
 # Claude Neko — 一键安装脚本
-# 安装到 ~/.local/share/claude-desktop-pet/
+# 安装到 ~/.local/share/claude-neko/
 # 配置全局 Claude Code hooks
 
 set -e
 
-INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
-STATE_DIR="$HOME/.local/state/claude-desktop-pet"
+INSTALL_DIR="$HOME/.local/share/claude-neko"
+STATE_DIR="$HOME/.local/state/claude-neko"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "🐾 Claude Neko 安装程序"
@@ -92,7 +92,7 @@ import json
 from pathlib import Path
 
 settings_file = Path.home() / ".claude" / "settings.json"
-install_dir = Path.home() / ".local" / "share" / "claude-desktop-pet"
+install_dir = Path.home() / ".local" / "share" / "claude-neko"
 
 # 读取现有配置
 if settings_file.exists():
@@ -204,14 +204,14 @@ new_hooks = {
     ]
 }
 
-# 先移除已有的 claude-desktop-pet hooks（防止重复追加）
+# 先移除已有的 claude-neko hooks（防止重复追加）
 for event in list(existing_hooks.keys()):
     new_matchers = []
     for matcher in existing_hooks[event]:
         new_hooks_list = []
         for h in matcher.get("hooks", []):
             cmd = h.get("command", "")
-            if "claude-desktop-pet" not in cmd:
+            if "claude-neko" not in cmd:
                 new_hooks_list.append(h)
         if new_hooks_list:
             matcher["hooks"] = new_hooks_list

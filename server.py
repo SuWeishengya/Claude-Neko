@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=9100)
 parser.add_argument("--session-id", type=str, default=None)
 parser.add_argument("--state-dir", type=str,
-                    default=str(Path.home() / ".local" / "state" / "claude-desktop-pet"))
+                    default=str(Path.home() / ".local" / "state" / "claude-neko"))
 args = parser.parse_args()
 
 # ─── 运行时目录 ─────────────────────────────────────────────
@@ -52,11 +52,19 @@ state = {
 
 # 最后一次收到事件的时间戳（用于心跳超时）
 last_event_time = float('inf')
+# 会话存活检查的宽限期（claude -c 启动时 session 文件可能还没创建好）
+session_alive_grace_period = 10  # 秒
 # 最后一次 stop 事件的时间戳（用于 sleep 延迟切换）
 last_stop_time = float('inf')
 
 # Claude 会话文件目录（用于检测会话是否存活）
 CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
+
+# 调试日志
+LOG_FILE = STATE_DIR / "server.log"
+def log(msg):
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
 
 # 线程锁：保护 state 字典的并发读写
 state_lock = threading.Lock()
@@ -100,12 +108,14 @@ def is_session_alive():
                 continue
     except OSError:
         pass
+    log(f"is_session_alive: no match for {args.session_id}")
     return False
 
 
 def heartbeat_checker():
     """后台线程：检查会话存活 + sleep 延迟切换"""
     global last_event_time, last_stop_time
+    log(f"heartbeat started, session_id={args.session_id}")
     while True:
         time.sleep(1)
         with state_lock:
@@ -116,8 +126,8 @@ def heartbeat_checker():
             if last_stop_time != float('inf'):
                 elapsed = time.time() - last_stop_time
                 if state["mode"] == "happy" and elapsed >= 1:
-                    state["mode"] = "think"
-                    state["msg"] = "Thinking..."
+                    state["mode"] = "idle"
+                    state["msg"] = "Ready"
                 elif state["mode"] == "think" and elapsed >= 10:
                     state["mode"] = "idle"
                     state["msg"] = "Ready"
@@ -153,12 +163,16 @@ def heartbeat_checker():
         except OSError:
             pass
 
-        # 收到过事件后才开始检查会话存活
+        # 收到过事件后才开始检查会话存活（给宽限期让 Claude 创建 session 文件）
         if args.session_id and last_event_time != float('inf'):
-            if not is_session_alive():
-                print("🐾 Claude 会话已结束，自动关闭")
-                do_shutdown()
-                break
+            elapsed_since_event = time.time() - last_event_time
+            if elapsed_since_event >= session_alive_grace_period:
+                alive = is_session_alive()
+                if not alive:
+                    log(f"session not alive, shutting down. session_id={args.session_id}")
+                    print("🐾 Claude 会话已结束，自动关闭")
+                    do_shutdown()
+                    break
 
 
 shutdown_event = threading.Event()
@@ -351,8 +365,9 @@ class Handler(BaseHTTPRequestHandler):
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state.get('msg', '')}"] + state["entries"][:9]
 
-            # session_end 在锁外处理：do_shutdown 内部也要获取 state_lock，
-            # 如果在锁内调用会导致死锁（state_lock 不是 RLock）
+            # session_end 只清理状态，不直接 shutdown
+            # heartbeat_checker 会检测会话是否真正结束（文件被删除）
+            # 这样 claude -c 继续同一会话时，Neko 不会被误杀
             if event == "session_end":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -360,7 +375,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(json.dumps({"ok": True}).encode())
-                do_shutdown()
                 return
 
             self.send_response(200)
@@ -389,6 +403,7 @@ def start_http_server():
 
 
 def main():
+    log(f"server starting, port={args.port}, session_id={args.session_id}")
     print(f"\n🐾 Claude Neko")
     print(f"{'─' * 40}")
     print(f"🌐 http://127.0.0.1:{args.port}")

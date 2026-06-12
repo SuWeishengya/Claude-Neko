@@ -2,8 +2,8 @@
 # Claude Neko — 管理命令
 # 用法: neko [start|stop|enable|disable|status]
 
-INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
-STATE_DIR="$HOME/.local/state/claude-desktop-pet"
+INSTALL_DIR="$HOME/.local/share/claude-neko"
+STATE_DIR="$HOME/.local/state/claude-neko"
 SESSIONS_DIR="$STATE_DIR/sessions"
 PYTHON="$INSTALL_DIR/venv/bin/python"
 SETTINGS_FILE="$HOME/.claude/settings.json"
@@ -149,7 +149,7 @@ for event, matchers in hooks.items():
         new_hooks = []
         for h in matcher.get("hooks", []):
             cmd = h.get("command", "")
-            if "claude-desktop-pet" in cmd:
+            if "claude-neko" in cmd:
                 removed = True
             else:
                 new_hooks.append(h)
@@ -178,7 +178,7 @@ cmd_status() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # 检查 hooks 是否启用
-    if grep -q "claude-desktop-pet" "$SETTINGS_FILE" 2>/dev/null; then
+    if grep -q "claude-neko" "$SETTINGS_FILE" 2>/dev/null; then
         echo -e "  自动启动: ${GREEN}已开启${NC}"
     else
         echo -e "  自动启动: ${YELLOW}未开启${NC}"

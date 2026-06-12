@@ -3,8 +3,8 @@
 
 set -e
 
-INSTALL_DIR="$HOME/.local/share/claude-desktop-pet"
-STATE_DIR="$HOME/.local/state/claude-desktop-pet"
+INSTALL_DIR="$HOME/.local/share/claude-neko"
+STATE_DIR="$HOME/.local/state/claude-neko"
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
 echo "🐾 Claude Neko 卸载程序"
@@ -71,7 +71,7 @@ except json.JSONDecodeError:
     exit(0)
 
 if "hooks" in settings:
-    # 只移除包含 claude-desktop-pet 的 hooks
+    # 只移除包含 claude-neko 的 hooks
     hooks = settings["hooks"]
     cleaned = {}
     removed = False
@@ -81,7 +81,7 @@ if "hooks" in settings:
             new_hooks = []
             for h in matcher.get("hooks", []):
                 cmd = h.get("command", "")
-                if "claude-desktop-pet" in cmd:
+                if "claude-neko" in cmd:
                     removed = True
                 else:
                     new_hooks.append(h)

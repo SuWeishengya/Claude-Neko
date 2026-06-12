@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=9100)
 parser.add_argument("--offset", type=int, default=0)
 parser.add_argument("--state-dir", type=str,
-                    default=str(Path.home() / ".local" / "state" / "claude-desktop-pet"))
+                    default=str(Path.home() / ".local" / "state" / "claude-neko"))
 args = parser.parse_args()
 
 try:

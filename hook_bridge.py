@@ -11,7 +11,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-STATE_DIR = Path.home() / ".local" / "state" / "claude-desktop-pet"
+STATE_DIR = Path.home() / ".local" / "state" / "claude-neko"
 SESSIONS_DIR = STATE_DIR / "sessions"
 
 
@@ -145,7 +145,12 @@ def main():
         })
 
     elif hook_event == "SessionEnd":
-        post_to_server(port, "/api/shutdown", {})
+        # 不直接发送 shutdown，让 heartbeat_checker 判断会话是否真正结束
+        # claude -c 继续同一会话时，SessionEnd 不应杀掉共享的 Neko
+        post_to_server(port, "/api/hook", {
+            "event": "session_end",
+            "msg": "Session ended",
+        })
 
 
 if __name__ == "__main__":

@@ -13,6 +13,15 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".local" / "state" / "claude-neko"
 SESSIONS_DIR = STATE_DIR / "sessions"
+LOG_FILE = STATE_DIR / "hook_bridge.log"
+
+def log(msg):
+    try:
+        with open(LOG_FILE, "a") as f:
+            from datetime import datetime
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
 
 
 def find_server_port(session_id: str) -> "int | None":
@@ -72,6 +81,7 @@ def main():
 
     session_id = event_data.get("session_id")
     hook_event = event_data.get("hook_event_name", "")
+    log(f"event={hook_event} session={session_id}")
 
     # 查找 server 端口（注册表优先，fallback 到 9100）
     port = find_server_port(session_id)
@@ -81,8 +91,10 @@ def main():
             urllib.request.urlopen("http://127.0.0.1:9100/api/state", timeout=1)
             port = 9100
         except Exception:
+            log(f"no server found for session={session_id}")
             return
 
+    log(f"routing to port={port}")
     # 根据事件类型构造转发数据
     if hook_event == "PreToolUse":
         tool_name = event_data.get("tool_name", "")

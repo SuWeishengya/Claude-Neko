@@ -204,6 +204,78 @@ cmd_status() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
+# ─── version：显示版本号 ─────────────────────────────────
+cmd_version() {
+    "$PYTHON" "$INSTALL_DIR/updater.py" version
+}
+
+# ─── update：检查并安装更新 ──────────────────────────────
+cmd_update() {
+    echo -e "🔍 检查更新..."
+    local RESULT
+    RESULT=$("$PYTHON" -c "
+import sys; sys.path.insert(0, '$INSTALL_DIR')
+from updater import check_github_update, get_current_version
+r = check_github_update()
+if r is None:
+    print('ERROR|网络错误，请检查网络连接')
+elif r['available']:
+    print(f'UPDATE|{r[\"version\"]}|{r[\"current\"]}|{r[\"url\"]}|{r[\"body\"][:100]}')
+else:
+    print(f'UPTODATE|{r[\"current\"]}')
+" 2>&1)
+
+    local STATUS=$(echo "$RESULT" | cut -d'|' -f1)
+
+    if [ "$STATUS" = "ERROR" ]; then
+        echo -e "${RED}❌ $(echo "$RESULT" | cut -d'|' -f2-)${NC}"
+        return 1
+    elif [ "$STATUS" = "UPTODATE" ]; then
+        local VER=$(echo "$RESULT" | cut -d'|' -f2)
+        echo -e "${GREEN}✅ 已是最新版本: v${VER}${NC}"
+        return 0
+    fi
+
+    # 有更新
+    local NEW_VER=$(echo "$RESULT" | cut -d'|' -f2)
+    local CUR_VER=$(echo "$RESULT" | cut -d'|' -f3)
+    local URL=$(echo "$RESULT" | cut -d'|' -f4)
+    local BODY=$(echo "$RESULT" | cut -d'|' -f5-)
+
+    echo ""
+    echo -e "📦 发现新版本: ${GREEN}v${NEW_VER}${NC} (当前 v${CUR_VER})"
+    if [ -n "$BODY" ]; then
+        echo -e "📝 更新日志: $BODY"
+    fi
+    echo ""
+    read -p "是否更新？[Y/n] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo "已取消"
+        return 0
+    fi
+
+    echo "⏳ 正在更新..."
+    "$PYTHON" -c "
+import sys; sys.path.insert(0, '$INSTALL_DIR')
+from updater import download_and_install
+def progress(step, detail=''):
+    icons = {'downloading':'⬇️','extracting':'📦','backing_up':'💾','installing':'🔧','rolling_back':'↩️','done':'✅'}
+    print(f'  {icons.get(step,\"⏳\")} {detail}')
+ok, msg = download_and_install('$URL', progress_callback=progress)
+if ok:
+    print(f'\\n✅ {msg}')
+else:
+    print(f'\\n❌ {msg}')
+    sys.exit(1)
+" 2>&1
+
+    if [ $? -eq 0 ]; then
+        echo "🔄 重启小猫..."
+        cmd_restart
+    fi
+}
+
 # ─── 主入口 ──────────────────────────────────────────────
 case "${1:-help}" in
     start)   cmd_start ;;
@@ -212,6 +284,8 @@ case "${1:-help}" in
     enable)  cmd_enable ;;
     disable) cmd_disable ;;
     status)  cmd_status ;;
+    version) cmd_version ;;
+    update)  cmd_update ;;
     *)
         echo "Claude Neko 管理工具"
         echo ""
@@ -224,5 +298,7 @@ case "${1:-help}" in
         echo "  enable   开启自动随 Claude 启动"
         echo "  disable  关闭自动随 Claude 启动"
         echo "  status   查看状态"
+        echo "  version  显示版本号"
+        echo "  update   检查并安装更新"
         ;;
 esac

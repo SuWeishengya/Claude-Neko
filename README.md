@@ -1,33 +1,82 @@
 # Claude Neko
 
-> **🐱 一只住在你屏幕上的小橘猫，陪你写代码**
+<p align="center">
+  <img src="assets/cat/idle/frame_0.png" width="120" alt="Claude Neko">
+</p>
 
-Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 的桌面宠物伴侣。它通过 Claude Code 的 Hooks 机制实时感知工作状态，在你的屏幕角落显示一只小猫动画——空闲时睡觉、忙碌时盯着你看、等你审批时举手请求、升级时开心跳跃。
+<p align="center">
+  <strong>一只住在你屏幕上的小橘猫，陪你写代码</strong>
+</p>
 
-<!-- TODO: 添加截图或 GIF 演示 -->
-<!-- ![Claude Neko Demo](docs/demo.gif) -->
+<p align="center">
+  <img src="assets/cat/idle/frame_0.png" width="48" alt="idle">
+  <img src="assets/cat/think/frame_0.png" width="48" alt="think">
+  <img src="assets/cat/typing/frame_0.png" width="48" alt="typing">
+  <img src="assets/cat/busy/frame_0.png" width="48" alt="busy">
+  <img src="assets/cat/happy/frame_0.png" width="48" alt="happy">
+  <img src="assets/cat/sleep/frame_0.png" width="48" alt="sleep">
+  <img src="assets/cat/heart/frame_0.png" width="48" alt="heart">
+  <img src="assets/cat/error/frame_0.png" width="48" alt="error">
+</p>
 
-## 它能做什么
+---
 
-**实时状态** — 小猫会根据 Claude 的状态切换动画：
+Claude Neko 是 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 的桌面宠物伴侣。一只小橘猫实时显示 Claude 的工作状态——空闲时眨眼、思考时沉思、写代码时打字、完成后开心跳跃。
 
-| Claude 在干嘛 | 小猫的反应 |
-|--------------|-----------|
-| 空闲等你输入 | 😺 待机眨眼，4 秒一次 |
-| 正在思考 | 🤔 思考中，显示 "Thinking..." |
-| 执行工具（读文件、跑命令…） | 👀 盯着你看，显示工具名 |
-| 写代码（Edit/Write） | ⌨️ 打字中 |
-| 调用子代理（Agent） | 🔷 呼叫助手 |
-| 等你审批操作 | 🙋 举手，弹出 Approve/Deny 按钮 |
-| 操作完成 | 🎉 开心 Done! ✨ |
-| 工具报错 | ❌ 错误提示 |
-| 长时间空闲 | 💤 30 秒后自动睡觉 |
+基于 GTK3 + Cairo 绘制，RGBA 透明背景，支持 Wayland 和 X11。
 
-**审批操作** — Claude 需要权限时，小猫身上会弹出按钮，直接点击即可批准或拒绝，不用切回终端。
+## 功能特性
 
-**多只小猫** — 同时开多个 Claude 会话？每只会话有自己的小猫，独立端口，窗口自动错开，还有 6 种颜色方案（橘/蓝/粉/灰/黑/白）。`claude -c` 继续同一会话时共享同一只猫。
+### 10 种状态动画
 
-**自动生命周期** — 装好后不用管。打开 Claude Code，小猫自动出现；关闭会话，小猫自动退出。
+| 状态 | 精灵图 | 触发条件 | 显示文字 |
+|:----:|:------:|---------|---------|
+| **idle** | <img src="assets/cat/idle/frame_0.png" width="32"> | 空闲等待输入 | Ready |
+| **think** | <img src="assets/cat/think/frame_0.png" width="32"> | 用户提交问题 | Thinking... |
+| **busy** | <img src="assets/cat/busy/frame_0.png" width="32"> | 执行工具（Bash/Read…） | 工具名 |
+| **typing** | <img src="assets/cat/typing/frame_0.png" width="32"> | 写代码（Edit/Write） | Coding... |
+| **subagent** | <img src="assets/cat/subagent/frame_0.png" width="32"> | 调用子代理 | Helper... |
+| **attention** | <img src="assets/cat/attention/frame_0.png" width="32"> | 等待审批 | 等待审批: 工具名 |
+| **heart** | <img src="assets/cat/heart/frame_0.png" width="32"> | 审批通过 | Approved! |
+| **happy** | <img src="assets/cat/happy/frame_0.png" width="32"> | 任务完成 | Done! ★ |
+| **error** | <img src="assets/cat/error/frame_0.png" width="32"> | 工具报错 | Error! |
+| **sleep** | <img src="assets/cat/sleep/frame_0.png" width="32"> | 30 秒无活动 | zZz... |
+
+### 粒子特效
+
+每种状态都有独特的粒子效果：sleep 飘出 "z"、busy 旋转加载点、typing 弹出代码符号、heart 飘爱心。
+
+### 6 种颜色方案
+
+<p align="center">
+  <img src="assets/cat/preview_orange.png" width="80" alt="橘猫">
+  <img src="assets/cat/preview_blue.png" width="80" alt="蓝猫">
+  <img src="assets/cat/preview_pink.png" width="80" alt="粉猫">
+  <img src="assets/cat/preview_gray.png" width="80" alt="灰猫">
+  <img src="assets/cat/preview_black.png" width="80" alt="黑猫">
+  <img src="assets/cat/preview_white.png" width="80" alt="白猫">
+</p>
+
+多实例自动分配不同颜色：橘 → 蓝 → 粉 → 灰 → 黑 → 白。右键菜单可实时切换。
+
+### 右键菜单
+
+右键点击小猫弹出操作菜单：
+
+- **检查更新** — 从 GitHub Release 检测新版本
+- **帮助** — 显示 neko 指令表
+- **颜色切换** — 实时切换猫咪颜色（不关闭菜单）
+- **反馈问题** — 打开 GitHub Issues
+- **停止** — 关闭小猫
+
+### 在线更新
+
+```bash
+neko update     # 检查并安装更新
+neko version    # 查看当前版本号
+```
+
+更新时自动备份，失败可回滚。
 
 ## 安装
 
@@ -37,7 +86,7 @@ cd Claude-Neko
 bash install.sh
 ```
 
-安装脚本会自动检测你的发行版（Fedora/Ubuntu/Arch），安装系统依赖，配置 Claude Code Hooks。完成后，打开任意 Claude Code 会话，小猫就会出现。
+安装脚本自动检测发行版（Fedora / Ubuntu / Arch），安装系统依赖，配置 Claude Code Hooks。完成后打开任意 Claude Code 会话，小猫自动出现。
 
 **卸载：**
 
@@ -47,18 +96,35 @@ bash ~/.local/share/claude-neko/uninstall.sh
 
 ## 日常使用
 
-装好后基本不用管。如果需要手动控制：
+装好后基本不用管。手动控制：
 
 ```bash
-neko start     # 手动拉起一只小猫
-neko stop      # 关闭所有小猫
-neko restart   # 重启
-neko status    # 查看哪些小猫在跑
-neko enable    # 开启自动随 Claude 启动（默认已开启）
-neko disable   # 关闭自动启动
+neko start      # 拉起小猫（监听所有 Claude 会话）
+neko stop       # 关闭所有小猫
+neko restart    # 重启
+neko status     # 查看运行状态
+neko enable     # 开启自动随 Claude 启动
+neko disable    # 关闭自动启动
+neko version    # 显示版本号
+neko update     # 检查并安装更新
 ```
 
-## 配置
+### 自动模式 vs 手动模式
+
+| | 自动模式 | 手动模式 |
+|--|---------|---------|
+| 启动方式 | Claude Code 自动触发 | `neko start` |
+| 会话绑定 | 每只猫绑定一个会话 | 一只猫监听所有会话 |
+| 生命周期 | 会话结束猫退出 | 手动 `neko stop` |
+| 多实例 | 每个会话一只猫 | 单实例 |
+
+## 操作方式
+
+| 操作 | 效果 |
+|------|------|
+| 左键拖拽 | 移动小猫位置 |
+| 左键单击 | 显示统计信息（Token、会话数等） |
+| 右键 | 打开操作菜单 |
 
 ## 环境要求
 
@@ -71,59 +137,25 @@ neko disable   # 关闭自动启动
 
 > ⚠️ 仅支持 Linux。不支持 macOS / Windows，不支持 Claude Desktop（GUI 版）。
 
----
-
-## 开发者文档
-
-### 架构
+## 技术架构
 
 ```
 Claude Code (SessionStart)  ──▶ launch.sh ──▶ server.py + neko_widget.py
 Claude Code (PreToolUse)    ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (PostToolUse)   ──▶ hook_bridge.py ──POST──▶ server.py
 Claude Code (Stop)          ──▶ hook_bridge.py ──POST──▶ server.py
-Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py (session_end)
+Claude Code (SessionEnd)    ──▶ hook_bridge.py ──POST──▶ server.py
 ```
 
-- **server.py** — HTTP 后端（ThreadingTCPServer），端口 9100+，维护全局状态
-- **neko_widget.py** — GTK3 悬浮窗，500ms 轮询状态 + 渲染帧动画
-- **hook_bridge.py** — 从 stdin 读取 Claude Code hook JSON，路由到 server.py
-- **launch.sh** — SessionStart hook 入口，清理残留、分配端口、启动 server + widget
-- **claude_monitor.py** — 手动模式，轮询 `~/.claude/sessions/` 获取状态
-
-### 手动模式
-
-```bash
-./start.sh    # 启动（不绑定 Claude 会话，长期运行）
-./stop.sh     # 停止
-```
-
-手动模式通过 `claude_monitor.py` 每 3 秒扫描 session 文件，适合不想配置 Hooks 的场景。
-
-### 运行时文件
-
-```
-~/.local/share/claude-neko/   # 代码（只读）
-~/.local/state/claude-neko/   # 运行时数据（读写）
-  └── sessions/                      # session 注册表（JSON）
-~/.local/bin/neko                    # 命令行工具
-~/.claude/settings.json              # hooks 配置（安装时追加，不覆盖）
-```
-
-### 测试
-
-```bash
-bash test_all.sh    # 38 项测试，覆盖 API、安全、并发、多实例
-```
-
-### 技术栈
-
-- Python 3.8+ / GTK3 + Cairo / Pillow / Claude Code CLI Hooks
-
-## 致谢
-
-灵感来自 [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)（ESP32 硬件版），基于 [worddless1-dotcom/claude-desktop-buddy](https://github.com/worddless1-dotcom/claude-desktop-buddy)（Windows 版）移植适配。
+- **server.py** — HTTP 后端，端口 9100+，维护全局状态机
+- **neko_widget.py** — GTK3 悬浮窗，125ms 帧动画 + 500ms 状态轮询
+- **hook_bridge.py** — Claude Code Hook 事件桥接
+- **updater.py** — 在线更新模块（GitHub Release 检测 + 下载 + 安装）
 
 ## 许可证
 
 MIT
+
+## 致谢
+
+灵感来自 [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)（ESP32 硬件版），基于 [worddless1-dotcom/claude-desktop-buddy](https://github.com/worddless1-dotcom/claude-desktop-buddy)（Windows 版）移植适配。

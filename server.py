@@ -35,6 +35,8 @@ state = {
     "total":         0,
     "running":       0,
     "waiting":       0,
+    "prompt_active": False,        # 用户问题是否正在处理中（跨多个工具调用）
+    "pending_heart": False,        # 审批通过后需要短暂显示 heart
     "msg":           "",
     "entries":       [],
     "tokens":        0,
@@ -100,7 +102,7 @@ def remove_registration():
 
 def is_session_alive():
     """检查 Claude 会话文件是否还存在（会话结束时 Claude 会清理）"""
-    if not args.session_id:
+    if not args.session_id or args.session_id.startswith("manual-"):
         return True
     try:
         for f in CLAUDE_SESSIONS_DIR.glob("*.json"):
@@ -285,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
                     last_stop_time = float('inf')
                     state["running"] = 0
                     state["waiting"] = 0
+                    state["prompt_active"] = True  # 标记：用户问题正在处理
                     state["mode"] = "think"
                     state["msg"] = "Thinking..."
                     state["connected"] = True
@@ -293,43 +296,74 @@ class Handler(BaseHTTPRequestHandler):
                 elif event == "pre_tool_use":
                     last_stop_time = float('inf')
                     state["running"] += 1
+                    state["prompt"] = None
+                    state["waiting"] = 0
                     tool_name = body.get("tool_name", "")
+
                     if tool_name in ("Edit", "Write", "NotebookEdit"):
-                        state["mode"] = "typing"
-                        state["msg"] = body.get("msg", "")[:40]
+                        target_mode = "typing"
                     elif tool_name == "Agent":
-                        state["mode"] = "subagent"
-                        state["msg"] = "Calling helper..."
+                        target_mode = "subagent"
                     else:
-                        state["mode"] = "busy"
+                        target_mode = "busy"
+
+                    # 审批通过 → 先显示 heart，再切到工作状态
+                    if state.get("pending_heart"):
+                        state["pending_heart"] = False
+                        state["mode"] = "heart"
+                        state["msg"] = "Approved!"
+                        _target = target_mode
+                        _msg = body.get("msg", "")[:40]
+                        def _delayed_switch():
+                            time.sleep(0.8)
+                            with state_lock:
+                                if state["mode"] == "heart":
+                                    state["mode"] = _target
+                                    state["msg"] = _msg
+                        threading.Thread(target=_delayed_switch, daemon=True).start()
+                    else:
+                        state["mode"] = target_mode
                         state["msg"] = body.get("msg", "")[:40]
+
                     state["connected"] = True
                     state["entries"] = [f"{datetime.now().strftime('%H:%M')} {state['msg']}"] + state["entries"][:9]
 
                 elif event == "post_tool_use":
                     last_stop_time = float('inf')
                     state["running"] = max(0, state["running"] - 1)
-                    if state["running"] == 0 and state["waiting"] == 0:
-                        state["mode"] = "happy"
-                        state["msg"] = "Done! ✨"
-                        last_stop_time = time.time()  # 启动 happy→idle 计时
+                    state["prompt"] = None  # 工具完成，清除审批弹窗
+                    state["waiting"] = 0
+                    if state["running"] == 0:
+                        if state.get("prompt_active"):
+                            # 用户问题还在处理中，Claude 在思考/准备下一个工具
+                            state["mode"] = "think"
+                            state["msg"] = "Thinking..."
+                        else:
+                            state["mode"] = "happy"
+                            state["msg"] = "Done! ★"
+                            last_stop_time = time.time()
                     else:
                         state["msg"] = body.get("msg", "")[:40]
 
                 elif event == "post_tool_use_failure":
                     last_stop_time = float('inf')
                     state["running"] = max(0, state["running"] - 1)
+                    state["prompt"] = None
+                    state["waiting"] = 0
+                    state["prompt_active"] = False  # 出错，停止处理
                     state["mode"] = "error"
                     state["msg"] = body.get("msg", "Error!")[:30]
 
                 elif event == "stop":
-                    was_working = state["running"] > 0 or state["mode"] in ("busy", "typing", "subagent")
+                    was_working = state["running"] > 0 or state["mode"] in ("busy", "typing", "subagent", "think")
                     state["running"] = 0
                     state["waiting"] = 0
+                    state["prompt"] = None  # stop 时清除审批弹窗
+                    state["prompt_active"] = False  # 用户问题处理完毕
                     last_stop_time = time.time()
                     if was_working:
                         state["mode"] = "happy"
-                        state["msg"] = "Done! ✨"
+                        state["msg"] = "Done! ★"
                     else:
                         state["mode"] = "idle"
                         state["msg"] = "Ready"
@@ -337,11 +371,11 @@ class Handler(BaseHTTPRequestHandler):
                 elif event == "permission_request":
                     last_stop_time = float('inf')
                     prompt = body.get("prompt")
-                    # 校验 prompt 结构，防止注入恶意数据
                     if isinstance(prompt, dict) and "id" in prompt:
                         state["mode"] = "attention"
                         state["waiting"] = 1
                         state["prompt"] = prompt
+                        state["pending_heart"] = True  # 审批通过后显示 heart
                         state["msg"] = body.get("msg", "Approval needed")
 
                 elif event == "session_end":
@@ -352,6 +386,7 @@ class Handler(BaseHTTPRequestHandler):
                     state["running"] = 0
                     state["waiting"] = 0
                     state["prompt"] = None  # 清除审批弹窗
+                    state["prompt_active"] = False
                     state["mode"] = "idle"
                     state["msg"] = "Session ended"
                     state["connected"] = False

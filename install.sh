@@ -60,15 +60,20 @@ if [ "$SCRIPT_DIR" = "$INSTALL_DIR" ]; then
     echo "  已在安装目录，跳过文件复制"
 else
     # 复制文件
-    for f in server.py neko_widget.py hook_bridge.py launch.sh stop.sh neko config.json uninstall.sh; do
+    for f in server.py neko_widget.py hook_bridge.py launch.sh stop.sh neko config.json uninstall.sh version.json updater.py; do
         if [ -f "$SCRIPT_DIR/$f" ]; then
             cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
         fi
     done
 
-    # 复制 assets
+    # 复制 assets（rsync --delete 确保源中删除的文件也会从安装目录删除）
     if [ -d "$SCRIPT_DIR/assets" ]; then
-        cp -r "$SCRIPT_DIR/assets" "$INSTALL_DIR/"
+        if command -v rsync &>/dev/null; then
+            rsync -a --delete "$SCRIPT_DIR/assets/" "$INSTALL_DIR/assets/"
+        else
+            rm -rf "$INSTALL_DIR/assets"
+            cp -r "$SCRIPT_DIR/assets" "$INSTALL_DIR/"
+        fi
     fi
 fi
 

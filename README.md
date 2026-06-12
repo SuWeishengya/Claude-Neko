@@ -80,9 +80,21 @@ neko version    # 查看当前版本号
 
 ## 安装
 
+**方式一：Git Clone**
+
 ```bash
 git clone https://github.com/SuWeishengya/Claude-Neko.git
 cd Claude-Neko
+bash install.sh
+```
+
+**方式二：下载压缩包**
+
+从 [Releases](https://github.com/SuWeishengya/Claude-Neko/releases) 下载 `claude-neko-v0.1.0.tar.gz`：
+
+```bash
+tar xzf claude-neko-v0.1.0.tar.gz
+cd claude-neko-v0.1.0
 bash install.sh
 ```
 

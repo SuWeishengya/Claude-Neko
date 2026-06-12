@@ -1,0 +1,25 @@
+post_install() {
+    echo ""
+    echo "🐾 Claude Neko 已安装！"
+    echo ""
+    echo "启动方式："
+    echo "  neko start        # 手动拉起小猫（监听所有 Claude 会话）"
+    echo "  bash /usr/share/claude-neko/install.sh  # 配置 Claude Code Hooks（自动启动）"
+    echo ""
+    echo "卸载："
+    echo "  sudo pacman -R claude-neko"
+    echo ""
+}
+
+pre_remove() {
+    # 停止所有运行中的小猫
+    if command -v neko &>/dev/null; then
+        neko stop 2>/dev/null || true
+    fi
+}
+
+post_remove() {
+    # 清理用户安装目录
+    rm -rf "$HOME/.local/share/claude-neko" 2>/dev/null || true
+    echo "已卸载 Claude Neko。用户数据保留在 ~/.local/state/claude-neko/"
+}

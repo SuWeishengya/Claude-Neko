@@ -1,0 +1,40 @@
+# Maintainer: SuWeisheng <suweishengya@gmail.com>
+# Contributor: Claude Neko contributors
+
+pkgname=claude-neko
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A desktop pet for Claude Code — a little cat that shows Claude's working status"
+arch=('any')
+url="https://github.com/SuWeishengya/Claude-Neko"
+license=('MIT')
+depends=('python' 'gtk3' 'python-cairo' 'python-gobject' 'python-pillow' 'python-numpy' 'python-scipy')
+makedepends=('git')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/SuWeishengya/Claude-Neko/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+install="${pkgname}.install"
+
+package() {
+    cd "$srcdir/Claude-Neko-$pkgver"
+
+    # 安装到 /usr/share/claude-neko
+    install -d "$pkgdir/usr/share/$pkgname"
+    cp -r assets "$pkgdir/usr/share/$pkgname/"
+    cp server.py neko_widget.py hook_bridge.py claude_monitor.py updater.py \
+       version.json config.json "$pkgdir/usr/share/$pkgname/"
+
+    # 安装 CLI 工具
+    install -Dm755 neko "$pkgdir/usr/bin/neko"
+
+    # 安装启动脚本
+    install -Dm755 launch.sh "$pkgdir/usr/share/$pkgname/launch.sh"
+    install -Dm755 stop.sh "$pkgdir/usr/share/$pkgname/stop.sh"
+    install -Dm755 install.sh "$pkgdir/usr/share/$pkgname/install.sh"
+
+    # 安装文档
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+    # 安装 hooks 配置辅助脚本
+    install -Dm755 install.sh "$pkgdir/usr/share/$pkgname/install.sh"
+}
